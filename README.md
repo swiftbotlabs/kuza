@@ -8,6 +8,14 @@ every move is a transaction you approve in Nimiq Pay.
 **Live:** https://swiftbotlab.github.io/kuza/ (open it in Nimiq Pay under Mini Apps. A normal browser shows a landing
 page with a demo that uses pretend NIM.)
 
+<p>
+  <img src="docs/img/shots/home.png" width="240" alt="Home with your stake and a goal">
+  <img src="docs/img/shots/save.png" width="240" alt="Adding to a goal">
+  <img src="docs/img/shots/cooling.png" width="240" alt="The cooling-off steps">
+</p>
+
+*Screenshots from the real Nimiq Pay app on testnet.*
+
 ## What it does
 
 - **Goals:** a name, a target, a date and a weekly plan.
@@ -27,6 +35,13 @@ network's cooling-off takes about 12 to 24 hours. Kuza's goals work through that
 force. The Nimiq provider can't create vesting contracts, so an enforced time lock isn't possible from a Mini App.
 
 Reward figures are estimates and they change. They're labelled that way in the app.
+
+## Tested so far
+
+In the real Nimiq Pay app on testnet: connecting and cancelling, creating a goal, setting NIM aside, a new stake, a
+top-up under 100 NIM, sending a gift with a note, starting a cooling-off, and goals surviving a close and reopen.
+Finishing a withdrawal (retire and remove) on a real wallet is still to come, because it needs the cooling-off to run
+out. On mainnet, the wait below matches the on-chain history of a real staker.
 
 ## How the unstaking wait is worked out
 
