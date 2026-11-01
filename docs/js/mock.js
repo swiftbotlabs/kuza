@@ -20,7 +20,11 @@ function ask(title, lines) {
   return new Promise((resolve, reject) => {
     const close = (ok) => {
       wrap.remove();
-      if (ok) resolve();
+      if (ok && chain.failNext) {
+        const err = chain.failNext;
+        chain.failNext = null;
+        reject(err);
+      } else if (ok) resolve();
       else reject(Object.assign(new Error('User rejected the request.'), { type: 'PERMISSION_DENIED', code: 4001 }));
     };
     const wrap = h('div', { class: 'shade', style: 'z-index:60;position:fixed' },
@@ -58,7 +62,8 @@ const provider = {
   disconnect() {},
   async sendNewStakerTransaction({ delegation, value }) {
     await ask('Confirm Transaction', ['Create Staker', `${value / LUNA} NIM`]);
-    if (value < MIN_STAKE) throw fail('below minimum');
+    chain.creates = (chain.creates || 0) + 1;
+    if (value < MIN_STAKE || chain.staker) throw fail('this would jam a real wallet');
     chain.wallet -= value;
     chain.staker = { balance: value, inactiveBalance: 0, retiredBalance: 0, inactiveFrom: null, delegation };
     return mine({ value });
@@ -103,6 +108,7 @@ const provider = {
 };
 
 function backend(method, params) {
+  if (chain.offline) throw new Error('offline');
   switch (method) {
     case 'getBlockNumber': return chain.height;
     case 'getStakerByAddress':
@@ -133,6 +139,7 @@ export function install() {
   window.__kuzaDemo = {
     skipCooling() { chain.height += 2 * BLOCKS_PER_EPOCH; },
     chain,
+    failNext(type, code, message, data) { chain.failNext = Object.assign(new Error(message), { type, code, data }); },
     gift(luna, memo) {
       const data = [...new TextEncoder().encode(memo)].map((b) => b.toString(16).padStart(2, '0')).join('');
       mine({ from: FRIEND, to: ME, value: luna, recipientData: data });

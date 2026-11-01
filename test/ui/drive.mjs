@@ -63,6 +63,13 @@ class Tab {
     }
     throw new Error(`text not found: ${needle}\n--- page ---\n${(await this.text()).slice(0, 800)}`);
   }
+  /** After a reload the wallet list is asked for again, once. */
+  async openSave() {
+    await this.click('[data-rig=save]');
+    await sleep(400);
+    if ((await this.text()).includes('Connect to Kuza')) await this.click('[data-rig=demo-yes]');
+    await this.waitText('How much?');
+  }
   async noHScroll() { return this.eval('document.documentElement.scrollWidth <= window.innerWidth'); }
 }
 
@@ -149,8 +156,7 @@ async function main() {
     check('goal name is text, not markup', !(await t.eval('!!document.querySelector("main b b, .goal-hero h1 b")')));
 
     // Move what's set aside, plus more, into a new stake. Reject first.
-    await t.click('[data-rig=save]');
-    await t.waitText('How much?');
+    await t.openSave();
     await t.fill('[data-rig=s-amount]', '100');
     await t.waitText('Include the 60 NIM');
     await t.eval(`document.querySelector('[data-rig=s-wallet]').click()`);
@@ -170,9 +176,46 @@ async function main() {
     check('stake: 160 NIM reached the (pretend) staker', staker && staker.balance >= 160e5);
     await t.shot(`${OUT}/06-goal.png`);
 
-    // Top-up under 100 NIM once a stake exists.
+    // Unknown outcome: recorded as pending, never retried, settled from the chain.
+    await t.openSave();
+    await t.fill('[data-rig=s-amount]', '10');
+    await t.waitText('Stake 10 NIM');
+    await t.eval(`window.__kuzaDemo.failNext('TRANSACTION_OUTCOME_UNKNOWN', -32001, 'outcome unknown', {})`);
+    await t.click('[data-rig=s-submit]');
+    await t.waitText('Pretend wallet');
+    await t.click('[data-rig=demo-yes]');
+    await t.waitText('Don\'t send it again');
+    check('unknown outcome: shown as confirming, sheet closed', (await t.text()).includes('confirming') && !(await t.eval(`!!document.querySelector('[data-rig=s-submit]')`)));
     await t.click('[data-rig=save]');
-    await t.waitText('How much?');
+    await t.waitText('still confirming');
+    check('unknown outcome: no second send while it is open', !(await t.eval(`!!document.querySelector('[data-rig=s-submit]')`)));
+    await t.eval(`(() => { const k = 'kuza.v1.mainnet'; const s = JSON.parse(localStorage.getItem(k)); for (const g of s.goals) g.entries = g.entries.filter((e) => e.status !== 'pending'); localStorage.setItem(k, JSON.stringify(s)); })()`);
+    await t.eval('location.reload()');
+    await sleep(1400);
+    await t.waitText('New motorbike');
+    await t.eval(`window.__kuzaDemo = window.__kuzaDemo`);
+    await t.eval(`document.querySelector('.card.goal')?.click()`);
+    await sleep(300);
+
+    // The reload reset the pretend chain, so the wallet has no stake while the goal remembers one.
+    await t.eval(`window.__kuzaDemo.chain.staker = { balance: 160e5, inactiveBalance: 0, retiredBalance: 0, inactiveFrom: null, delegation: 'NQ15 HNAH YRVH DFVM YHAG BSXG 0QHK KA0Q XDR7' }`);
+    await t.eval('document.dispatchEvent(new Event("visibilitychange"))');
+    await sleep(500);
+
+    // Wallet still busy with an earlier transaction: says so and keeps the sheet.
+    await t.openSave();
+    await t.fill('[data-rig=s-amount]', '5');
+    await t.waitText('Stake 5 NIM');
+    await t.eval(`window.__kuzaDemo.failNext('INTERNAL_ERROR', -32603, 'Failed to send payment transaction: A transaction is still pending. Wait for it to resolve before sending another.')`);
+    await t.click('[data-rig=s-submit]');
+    await t.waitText('Pretend wallet');
+    await t.click('[data-rig=demo-yes]');
+    await t.waitText('still finishing an earlier transaction');
+    check('wallet busy: friendly message, sheet stays', await t.eval(`!!document.querySelector('[data-rig=s-submit]')`));
+    await t.click('[data-rig=sheet-close]');
+
+    // Top-up under 100 NIM once a stake exists.
+    await t.openSave();
     await t.fill('[data-rig=s-amount]', '25');
     await t.waitText('Stake 25 NIM');
     await t.click('[data-rig=s-submit]');
@@ -180,6 +223,14 @@ async function main() {
     await t.click('[data-rig=demo-yes]');
     await t.waitText('Saved on-chain', 8000);
     check('stake: top-up under 100 NIM goes to add-stake', (await t.eval('window.__kuzaDemo.chain.staker.balance')) >= 185e5);
+    await t.eval('location.reload()');
+    await sleep(1400);
+    await t.waitText('New motorbike');
+    await t.eval(`document.querySelector('.card.goal')?.click()`);
+    await sleep(300);
+    await t.eval(`window.__kuzaDemo.chain.staker = { balance: 185e5, inactiveBalance: 0, retiredBalance: 0, inactiveFrom: null, delegation: 'NQ15 HNAH YRVH DFVM YHAG BSXG 0QHK KA0Q XDR7' }`);
+    await t.eval('document.dispatchEvent(new Event("visibilitychange"))');
+    await sleep(500);
 
     // A gift from someone else shows up from the chain. Refresh by reloading the screen state.
     const gid = await t.eval(`location.hash.split('/').pop()`);
@@ -234,6 +285,31 @@ async function main() {
     await sleep(500);
     await t.waitText('Withdrawn');
     await t.shot(`${OUT}/10-after-break.png`);
+
+    // A stale view must not send create-staker to a wallet that already has a stake.
+    await t.go(`${base}?demo=1&lang=en`);
+    await sleep(600);
+    await t.waitText('New motorbike');
+    await t.eval(`document.querySelector('.card.goal')?.click()`);
+    await sleep(300);
+    await t.openSave();
+    await t.fill('[data-rig=s-amount]', '150');
+    await t.waitText('This starts your stake');
+    await t.eval(`window.__kuzaDemo.chain.staker = { balance: 150e5, inactiveBalance: 0, retiredBalance: 0, inactiveFrom: null, delegation: 'NQ15 HNAH YRVH DFVM YHAG BSXG 0QHK KA0Q XDR7' }`);
+    await t.click('[data-rig=s-submit]');
+    await t.waitText('Add Stake');
+    await t.click('[data-rig=demo-no]');
+    await t.waitText('Nothing was sent');
+    check('stale view: sends add-stake, not create-staker', !(await t.eval('window.__kuzaDemo.chain.creates')));
+    await t.click('[data-rig=sheet-close]');
+
+    // The network going away never leaves a blank screen.
+    await t.eval('window.__kuzaDemo.chain.offline = true');
+    await t.eval('document.dispatchEvent(new Event("visibilitychange"))');
+    await t.waitText('reach the network');
+    check('offline: banner, screen stays', (await t.text()).includes('New motorbike'));
+    await t.shot(`${OUT}/10b-offline.png`);
+    await t.eval('window.__kuzaDemo.chain.offline = false');
 
     // Reload keeps goals.
     await t.eval('location.reload()');

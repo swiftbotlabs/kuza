@@ -831,7 +831,8 @@ async function sheetSave(goal, { includeWallet = false, first = false } = {}) {
     }
     if (tooMuch) kids.push(h('p', { class: 'tiny bad' }, t('save.tooMuch', { amount: nim(R.spendable) })));
     if (tooMuch && R.wallet > R.spendable) kids.push(h('p', { class: 'tiny mute' }, t('save.arriving', { amount: nim(R.wallet - R.spendable) })));
-    if (route.route === 'aside' && R.wallet !== null && newMoney + noted > R.wallet) kids.push(h('p', { class: 'tiny warn' }, t('save.asideOver', { amount: nim(R.wallet) })));
+    if (R.wallet === 0) kids.push(h('p', { class: 'tiny warn' }, t('save.empty')));
+    else if (route.route === 'aside' && R.wallet !== null && newMoney + noted > R.wallet) kids.push(h('p', { class: 'tiny warn' }, t('save.asideOver', { amount: nim(R.wallet) })));
     info.replaceChildren(...kids);
     btn.disabled = !value || route.route === 'invalid' || tooMuch || (route.route === 'new' && !pool);
     btn.textContent = route.route === 'aside' ? t('save.goAside', { amount: nim(newMoney) }) : staked ? t('save.goStake', { amount: nim(value) }) : t('save.go');
