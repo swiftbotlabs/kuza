@@ -196,7 +196,7 @@ async function main() {
     await t.click('[data-rig=save]');
     await t.waitText('still confirming');
     check('unknown outcome: no second send while it is open', !(await t.eval(`!!document.querySelector('[data-rig=s-submit]')`)));
-    await t.eval(`(() => { const k = 'kuza.v1.mainnet'; const s = JSON.parse(localStorage.getItem(k)); for (const g of s.goals) g.entries = g.entries.filter((e) => e.status !== 'pending'); localStorage.setItem(k, JSON.stringify(s)); })()`);
+    await t.eval(`(() => { const k = 'kuza.demo.mainnet'; const s = JSON.parse(localStorage.getItem(k)); for (const g of s.goals) g.entries = g.entries.filter((e) => e.status !== 'pending'); localStorage.setItem(k, JSON.stringify(s)); })()`);
     await t.eval('location.reload()');
     await sleep(1400);
     await t.waitText('New motorbike');
@@ -268,6 +268,8 @@ async function main() {
     await t.click('[data-rig=w-submit]');
     await t.waitText('Pretend wallet');
     await t.click('[data-rig=demo-yes]');
+    await sleep(500);
+    if ((await t.text()).includes('Pretend wallet')) await t.click('[data-rig=demo-yes]');
     await t.waitText('Cooling-off', 6000);
     await sleep(300);
     await t.click('[data-rig=cool-card]');
@@ -347,6 +349,7 @@ async function main() {
     await t.waitText('Add to this goal');
     await t.fill('[data-rig=j-amount]', '100');
     await t.fill('[data-rig=j-note]', 'Happy birthday');
+    await t.waitText('Send 100 NIM');
     await t.shot(`${OUT}/12-jar.png`);
     await t.click('[data-rig=j-send]');
     await t.waitText('Connect to Kuza');
@@ -356,6 +359,19 @@ async function main() {
     await t.click('[data-rig=demo-yes]');
     await t.waitText('Thank you', 8000);
     check('jar: gift sent with memo', (await t.eval(`window.__kuzaDemo.chain.history[0].recipientData.length`)) > 20);
+
+    // A failed gift brings the button back; an unknown outcome keeps it off.
+    await t.go(`${base}?demo=1&lang=en&jar=${jar}`);
+    await t.waitText('Add to this goal');
+    await t.fill('[data-rig=j-amount]', '100');
+    await t.click('[data-rig=j-send]');
+    await t.waitText('Connect to Kuza');
+    await t.click('[data-rig=demo-yes]');
+    await t.waitText('KZ1|');
+    await t.eval(`window.__kuzaDemo.failNext('TRANSACTION_OUTCOME_UNKNOWN', -32001, 'outcome unknown', {})`);
+    await t.click('[data-rig=demo-yes]');
+    await t.waitText('Don\'t send it again');
+    check('jar: unknown outcome keeps the button off', await t.eval(`document.querySelector('[data-rig=j-send]').disabled`));
 
     // Small phone.
     const s = await newTab(320, 640);

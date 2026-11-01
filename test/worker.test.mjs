@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { trimValidators, grossRate, buildPrices } from '../worker/src/index.js';
+import { trimValidators, grossRate, buildPrices, callerKey } from '../worker/src/index.js';
 
 const v = (over) => ({ name: 'Pool', address: 'NQ15 HNAH YRVH DFVM YHAG BSXG 0QHK KA0Q XDR7', fee: 0.05, payoutType: 'restake', payoutSchedule: 'Every 12 hours', accentColor: '#c08e2f', dominanceRatio: 0.02, isListed: true, score: { total: 0.99 }, logo: 'data:image/svg+xml;base64,AAAA', ...over });
 
@@ -27,4 +27,11 @@ test('grossRate and buildPrices', () => {
   assert.deepEqual(buildPrices([], null), {});
   assert.deepEqual(buildPrices([{ last: 'x' }], null), {});
   assert.deepEqual(Object.keys(buildPrices([{ last: '0.0002' }], null)), ['usd']);
+});
+
+test('callerKey groups an IPv6 /64', () => {
+  const req = (ip) => ({ headers: new Headers({ 'cf-connecting-ip': ip }) });
+  assert.equal(callerKey(req('2001:db8:1:2:aaaa::1')), callerKey(req('2001:db8:1:2:bbbb::9')));
+  assert.notEqual(callerKey(req('2001:db8:1:3::1')), callerKey(req('2001:db8:1:2::1')));
+  assert.equal(callerKey(req('203.0.113.7')), '203.0.113.7');
 });

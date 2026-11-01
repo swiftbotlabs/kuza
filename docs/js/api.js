@@ -1,7 +1,8 @@
 // Kuza's small public helper: wallet count, a trimmed validator list, price and an estimated reward rate.
 // All of it is optional. If it's down the app carries on with what it has.
 
-import { sha256Hex } from './nim.js';
+import { sha256Hex, normalizeAddress } from './nim.js';
+import { cleanText } from './jar.js';
 
 export const API = 'https://kuza-api.swiftbotlab.workers.dev';
 
@@ -31,19 +32,18 @@ function recall(key) {
   }
 }
 
-const VALIDATOR_RE = /^NQ\d{2}( [0-9A-HJ-NP-VXY]{4}){8}$/;
-
 function cleanValidators(list) {
   if (!Array.isArray(list)) return [];
-  return list.filter((v) => v && typeof v.name === 'string' && VALIDATOR_RE.test(v.address))
+  return list.filter((v) => v && typeof v.name === 'string' && typeof v.address === 'string' && normalizeAddress(v.address))
     .map((v) => ({
-      name: v.name.slice(0, 32),
-      address: v.address,
+      name: cleanText(v.name, 32),
+      address: normalizeAddress(v.address),
       fee: typeof v.fee === 'number' && v.fee >= 0 && v.fee <= 1 ? v.fee : null,
       score: typeof v.score === 'number' ? v.score : null,
       color: /^#[0-9a-fA-F]{6}$/.test(v.color || '') ? v.color : '#1f2348',
-      schedule: typeof v.schedule === 'string' ? v.schedule.slice(0, 32) : '',
-    }));
+      schedule: typeof v.schedule === 'string' ? cleanText(v.schedule, 32) : '',
+    }))
+    .filter((v) => v.name);
 }
 
 /** The list shipped with the app, or the last one fetched. Instant, so the first stake never waits on a server. */
@@ -71,16 +71,26 @@ export async function freshValidators(network) {
   return null;
 }
 
-/** { price: {usd, eur, ...}, rate, stakedRatio } or null. */
+function cleanMarket(data) {
+  const price = {};
+  for (const [code, value] of Object.entries(data?.price || {})) {
+    if (/^[a-z]{3}$/.test(code) && Number.isFinite(value) && value > 0) price[code] = value;
+  }
+  const rate = Number.isFinite(data?.rate) && data.rate > 0 && data.rate < 1 ? data.rate : null;
+  return Object.keys(price).length || rate ? { price, rate } : null;
+}
+
+/** { price: {usd, eur, ...}, rate } or null. */
 export async function loadMarket() {
   const key = 'kuza.market';
   try {
-    const data = await get('/v1/market');
-    remember(key, data);
-    return data;
-  } catch {
-    return recall(key);
-  }
+    const clean = cleanMarket(await get('/v1/market'));
+    if (clean) {
+      remember(key, clean);
+      return clean;
+    }
+  } catch { /* fall back to the last good value */ }
+  return cleanMarket(recall(key));
 }
 
 export async function loadStats() {

@@ -5,15 +5,16 @@ Savings goals in your own NIM stake, as a Mini App for [Nimiq Pay](https://nimiq
 You set a goal. Your NIM goes into your own stake with a validator, so it earns while it waits. Kuza never holds it:
 every move is a transaction you approve in Nimiq Pay.
 
-**Live:** https://swiftbotlab.github.io/kuza/ (open it in Nimiq Pay under Mini Apps. In a normal browser you get a demo
-with pretend NIM.)
+**Live:** https://swiftbotlab.github.io/kuza/ (open it in Nimiq Pay under Mini Apps. A normal browser shows a landing
+page with a demo that uses pretend NIM.)
 
 ## What it does
 
 - **Goals:** a name, a target, a date and a weekly plan.
 - **Saving:** a staking transaction that you approve. Under the network's 100 NIM minimum for a new stake, the goal
   fills in your wallet instead and tells you how far you are from being able to stake.
-- **Progress:** read from the chain: your stake, what it earned, streaks, and a weekly reminder in the app.
+- **Progress:** your stake and what it earned are read from the chain. Streaks, set-aside notes and how stake is split
+  between goals are kept on your phone. There's a weekly reminder in the app.
 - **Breaking a goal:** shows the real unstaking path and the real wait, with live block numbers.
 - **Group jar:** an invite link lets a friend pay your own address directly, with a note in the transaction.
   Kuza reads the note on-chain and counts it toward the goal.
@@ -65,8 +66,8 @@ No dependencies to install. The vendored SDK matches npm's `sha512-gDumiC+5OiN5r
 
 ## Privacy
 
-Goals stay on your phone. To show a public count of wallets, Kuza sends one one-way hash of your address, once, and
-you can switch that off in settings. See [SECURITY.md](SECURITY.md).
+Goals stay on your phone. To show a public count of wallets, Kuza sends a hash of your address once, and you can switch
+that off in settings. The helper keys it again with a secret before storing it. See [SECURITY.md](SECURITY.md).
 
 ## Licence
 

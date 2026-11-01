@@ -10,6 +10,9 @@
 
 const WEEK = 7 * 24 * 3600 * 1000;
 const NAME_MAX = 40;
+const MAX_GIFTS = 500;
+const KINDS = new Set(['aside', 'gift', 'stake', 'assign', 'withdraw']);
+const STATUSES = new Set(['ok', 'pending', 'failed']);
 
 export function newGoal({ id, name, target, date, weekly, icon, now }) {
   return { id, name: String(name).slice(0, NAME_MAX), target, date: date || null, weekly: weekly || 0, icon: icon || 'seed', createdAt: now, entries: [], closedAt: null };
@@ -146,10 +149,22 @@ export function mergeGifts(goals, gifts) {
   for (const gift of gifts) {
     const goal = goals.find((g) => g.id === gift.goal);
     if (!goal || goal.entries.some((e) => e.hash === gift.hash)) continue;
+    if (goal.entries.filter((e) => e.kind === 'gift').length >= MAX_GIFTS) continue;
     goal.entries.push({ kind: 'gift', luna: gift.luna, hash: gift.hash, from: gift.from, note: gift.note, at: gift.at, status: 'ok' });
     added++;
   }
   return added;
+}
+
+function cleanEntry(e) {
+  if (!e || !KINDS.has(e.kind) || !Number.isSafeInteger(e.luna) || e.luna < 0) return null;
+  const out = { kind: e.kind, luna: e.luna, at: Number.isFinite(e.at) ? e.at : 0, status: STATUSES.has(e.status) ? e.status : 'failed' };
+  if (typeof e.hash === 'string' && /^[0-9a-fA-F]{64}$/.test(e.hash)) out.hash = e.hash;
+  if (Number.isSafeInteger(e.fromWallet) && e.fromWallet >= 0) out.fromWallet = e.fromWallet;
+  if (Number.isSafeInteger(e.block)) out.block = e.block;
+  if (typeof e.from === 'string') out.from = e.from.slice(0, 64);
+  if (typeof e.note === 'string') out.note = e.note.slice(0, 60);
+  return out;
 }
 
 /** Validate a stored state blob; drop anything that doesn't look right. */
@@ -170,7 +185,7 @@ export function sanitizeState(raw) {
   if (Array.isArray(raw.goals)) {
     for (const g of raw.goals.slice(0, 50)) {
       if (!g || typeof g.id !== 'string' || typeof g.name !== 'string' || !Number.isSafeInteger(g.target) || !Array.isArray(g.entries)) continue;
-      out.goals.push({ id: g.id, name: g.name.slice(0, NAME_MAX), target: g.target, date: typeof g.date === 'string' ? g.date : null, weekly: Number.isSafeInteger(g.weekly) ? g.weekly : 0, icon: typeof g.icon === 'string' ? g.icon : 'seed', createdAt: Number(g.createdAt) || 0, closedAt: g.closedAt ? Number(g.closedAt) : null, entries: g.entries.filter((e) => e && typeof e.kind === 'string' && Number.isSafeInteger(e.luna)).slice(0, 2000) });
+      out.goals.push({ id: g.id, name: g.name.slice(0, NAME_MAX), target: g.target, date: typeof g.date === 'string' && !Number.isNaN(Date.parse(`${g.date}T12:00:00Z`)) ? g.date : null, weekly: Number.isSafeInteger(g.weekly) ? g.weekly : 0, icon: typeof g.icon === 'string' ? g.icon : 'seed', createdAt: Number.isFinite(g.createdAt) ? g.createdAt : 0, closedAt: Number.isFinite(g.closedAt) ? g.closedAt : null, entries: g.entries.map(cleanEntry).filter(Boolean).slice(-2000) });
     }
   }
   return out;

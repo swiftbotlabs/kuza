@@ -41,13 +41,17 @@ export function normalizeStaker(raw) {
   const active = Number(raw.balance ?? raw.activeBalance ?? 0);
   const inactive = Number(raw.inactiveBalance ?? 0);
   const retired = Number(raw.retiredBalance ?? 0);
+  const inactiveFrom = raw.inactiveFrom ?? null;
+  // These numbers go into transactions, so anything odd stops here rather than becoming NaN later.
+  if (![active, inactive, retired].every((n) => Number.isSafeInteger(n) && n >= 0)) throw new Error('bad staker data');
+  if (inactiveFrom !== null && !Number.isSafeInteger(inactiveFrom)) throw new Error('bad staker data');
   return {
     active,
     inactive,
     retired,
     total: active + inactive + retired,
     delegation: raw.delegation || null,
-    inactiveFrom: raw.inactiveFrom ?? null,
+    inactiveFrom,
   };
 }
 

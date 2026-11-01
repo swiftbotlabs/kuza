@@ -17,12 +17,19 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const DECAY_YEAR = 1 - Math.exp(-(1 - 0.9999999999960264) * 365.25 * 864e5);
 const MAX_UPSTREAM = 4 * 1024 * 1024;
 const PER_CALLER_HOUR = 12;
+const PER_DAY = 1000;
 
 function cors(request) {
   const origin = request.headers.get('origin');
   const headers = { vary: 'origin', 'x-content-type-options': 'nosniff' };
   if (origin && ORIGINS.has(origin)) headers['access-control-allow-origin'] = origin;
   return headers;
+}
+
+/** The caller's IP, or for IPv6 its /64, since one host can rotate through a whole /64. Never stored. */
+export function callerKey(request) {
+  const ip = request.headers.get('cf-connecting-ip') || '';
+  return ip.includes(':') ? ip.split(':').slice(0, 4).join(':') : ip;
 }
 
 function json(data, request, status = 200, extra = {}) {
@@ -36,7 +43,7 @@ function json(data, request, status = 200, extra = {}) {
 const hits = new Map();
 
 function limited(request, max) {
-  const ip = request.headers.get('cf-connecting-ip') || 'x';
+  const ip = callerKey(request) || 'x';
   const now = Date.now();
   const rec = hits.get(ip);
   if (!rec || now - rec.t > 60e3) {
@@ -48,27 +55,50 @@ function limited(request, max) {
   return rec.n > max;
 }
 
+/** Read a body, stopping as soon as it passes max bytes. */
+async function readCapped(message, max) {
+  if (Number(message.headers.get('content-length') || 0) > max) throw new Error('too large');
+  if (!message.body) return '';
+  const reader = message.body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > max) {
+      await reader.cancel();
+      throw new Error('too large');
+    }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    all.set(chunk, at);
+    at += chunk.length;
+  }
+  return new TextDecoder().decode(all);
+}
+
 async function fetchJson(url, timeout = 8000) {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeout), redirect: 'follow', headers: { accept: 'application/json', 'user-agent': 'kuza-api' } });
   if (!res.ok) throw new Error(`upstream ${res.status}`);
-  const text = await res.text();
-  if (text.length > MAX_UPSTREAM) throw new Error('upstream too large');
-  return JSON.parse(text);
+  return JSON.parse(await readCapped(res, MAX_UPSTREAM));
 }
 
-function cached(request, ttl, build, usable = () => true) {
-  return async (ctx) => {
-    const cache = caches.default;
-    const key = new Request(new URL(request.url).toString(), { method: 'GET' });
-    const hit = await cache.match(key);
-    let data;
-    if (hit) data = await hit.json();
-    else {
-      data = await build();
-      if (usable(data)) ctx.waitUntil(cache.put(key, new Response(JSON.stringify(data), { headers: { 'cache-control': `public, max-age=${ttl}`, 'content-type': 'application/json' } })));
-    }
-    return json(data, request, 200, { 'cache-control': `public, max-age=${Math.min(ttl, 300)}` });
-  };
+/** Answer from the edge cache, built at most once per ttl. Cache keys are fixed paths, never caller input. */
+async function cached(request, ctx, cachePath, ttl, build, usable = () => true) {
+  const cache = caches.default;
+  const key = new Request(new URL(cachePath, request.url).toString(), { method: 'GET' });
+  const hit = await cache.match(key);
+  let data;
+  if (hit) data = await hit.json();
+  else {
+    data = await build();
+    if (usable(data)) ctx.waitUntil(cache.put(key, new Response(JSON.stringify(data), { headers: { 'cache-control': `public, max-age=${ttl}`, 'content-type': 'application/json' } })));
+  }
+  return json(data, request, 200, { 'cache-control': `public, max-age=${Math.min(ttl, 300)}` });
 }
 
 export function trimValidators(list) {
@@ -118,32 +148,32 @@ async function hmacHex(env, text) {
 export class Counter {
   constructor(state) {
     this.sql = state.storage.sql;
-    this.recent = new Map(); // memory only: new wallets per caller per hour, so one source can't inflate the count
+    this.recent = new Map(); // memory only: new wallets per caller per hour
     this.sql.exec('CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, day TEXT NOT NULL)');
   }
 
+  add(id, caller) {
+    const now = Date.now();
+    let rec = this.recent.get(caller);
+    if (!rec || now - rec.t > 3600e3) {
+      if (this.recent.size > 20000) this.recent.clear();
+      rec = { t: now, n: 0 };
+      this.recent.set(caller, rec);
+    }
+    rec.n += 1;
+    if (rec.n > PER_CALLER_HOUR) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (this.sql.exec('SELECT COUNT(*) AS n FROM seen WHERE day = ?', today).one().n >= PER_DAY) return;
+    this.sql.exec('INSERT OR IGNORE INTO seen (id, day) VALUES (?, ?)', id, today);
+  }
+
   async fetch(request) {
-    const url = new URL(request.url);
     if (request.method === 'POST') {
       const { id, caller } = await request.json();
-      const now = Date.now();
-      let rec = this.recent.get(caller);
-      if (!rec || now - rec.t > 3600e3) {
-        if (this.recent.size > 20000) this.recent.clear();
-        rec = { t: now, n: 0 };
-        this.recent.set(caller, rec);
-      }
-      rec.n += 1;
-      if (rec.n <= PER_CALLER_HOUR) {
-        this.sql.exec('INSERT OR IGNORE INTO seen (id, day) VALUES (?, ?)', id, new Date().toISOString().slice(0, 10));
-      }
+      this.add(id, caller);
+      return new Response(null, { status: 204 });
     }
-    const wallets = this.sql.exec('SELECT COUNT(*) AS n FROM seen').one().n;
-    if (url.pathname === '/days') {
-      const days = this.sql.exec('SELECT day, COUNT(*) AS n FROM seen GROUP BY day ORDER BY day').toArray();
-      return Response.json({ wallets, days });
-    }
-    return Response.json({ wallets });
+    return Response.json({ wallets: this.sql.exec('SELECT COUNT(*) AS n FROM seen').one().n });
   }
 }
 
@@ -161,16 +191,14 @@ async function handle(request, env, ctx) {
     if (request.method !== 'POST') return json({ error: 'method' }, request, 405);
     if (!ORIGINS.has(request.headers.get('origin'))) return json({ error: 'origin' }, request, 403);
     if (limited(request, 10)) return json({ error: 'slow down' }, request, 429);
-    const text = await request.text();
-    if (text.length > 200) return json({ error: 'too large' }, request, 413);
     let body;
     try {
-      body = JSON.parse(text);
-    } catch {
-      return json({ error: 'bad json' }, request, 400);
+      body = JSON.parse(await readCapped(request, 200));
+    } catch (err) {
+      return json({ error: err.message === 'too large' ? 'too large' : 'bad json' }, request, err.message === 'too large' ? 413 : 400);
     }
     if (!body || typeof body.h !== 'string' || !HEX64.test(body.h)) return json({ error: 'bad hash' }, request, 400);
-    const [id, caller] = await Promise.all([hmacHex(env, body.h), hmacHex(env, `ip:${request.headers.get('cf-connecting-ip') || ''}`)]);
+    const [id, caller] = await Promise.all([hmacHex(env, body.h), hmacHex(env, `ip:${callerKey(request)}`)]);
     await counter(env).fetch('https://do/seen', { method: 'POST', body: JSON.stringify({ id, caller }) });
     return json(null, request, 204);
   }
@@ -179,30 +207,19 @@ async function handle(request, env, ctx) {
   if (limited(request, 120)) return json({ error: 'slow down' }, request, 429);
 
   if (path === '/v1/stats') {
-    const res = await counter(env).fetch('https://do/days');
-    return json(await res.json(), request, 200, { 'cache-control': 'public, max-age=60' });
+    return cached(request, ctx, '/v1/stats', 300, async () => (await counter(env).fetch('https://do/count')).json());
   }
   if (path === '/v1/validators') {
     const net = url.searchParams.get('net') === 'test' ? 'test' : 'main';
-    const clean = new Request(`${url.origin}/v1/validators?net=${net}`);
-    return cached(clean, 3600, async () => ({ validators: trimValidators(await fetchJson(VALIDATORS[net], 12000)), at: Date.now() }))(ctx).then((r) => {
-      const out = new Response(r.body, r);
-      for (const [k, v] of Object.entries(cors(request))) out.headers.set(k, v);
-      return out;
-    });
+    return cached(request, ctx, `/v1/validators?net=${net}`, 3600, async () => ({ validators: trimValidators(await fetchJson(VALIDATORS[net], 12000)), at: Date.now() }));
   }
   if (path === '/v1/market') {
-    const clean = new Request(`${url.origin}/v1/market?v=2`);
-    return cached(clean, 900, async () => {
+    return cached(request, ctx, '/v1/market?v=2', 900, async () => {
       const [quote, fx, supply] = await Promise.allSettled([fetchJson(PRICE), fetchJson(FX), fetchJson(SUPPLY)]);
       const p = quote.status === 'fulfilled' ? buildPrices(quote.value, fx.status === 'fulfilled' ? fx.value : null) : {};
       const s = supply.status === 'fulfilled' ? supply.value : null;
       return { price: p, rate: grossRate(s), stakedRatio: s?.staking && s?.total ? Math.round((s.staking / s.total) * 1000) / 1000 : null, at: Date.now() };
-    }, (d) => d.price.usd > 0 && d.rate)(ctx).then((r) => {
-      const out = new Response(r.body, r);
-      for (const [k, v] of Object.entries(cors(request))) out.headers.set(k, v);
-      return out;
-    });
+    }, (d) => d.price.usd > 0 && d.rate);
   }
   if (path === '/') return json({ name: 'kuza-api', source: 'https://github.com/swiftbotlab/kuza' }, request);
   return json({ error: 'not found' }, request, 404);

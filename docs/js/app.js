@@ -1,7 +1,7 @@
 // Kuza: savings goals on top of the user's own NIM stake.
 // Kuza holds nothing and sends nothing by itself. Money only moves through Nimiq Pay's own approval sheets.
 
-import { LUNA, toLuna, fmtNim, fmtFiat, shortAddress, normalizeAddress, newId } from './nim.js';
+import { LUNA, toLuna, plainNim, fmtNim, fmtFiat, shortAddress, normalizeAddress, newId } from './nim.js';
 import * as S from './staking.js';
 import * as G from './goals.js';
 import * as J from './jar.js';
@@ -12,7 +12,7 @@ import { h, icon, hexRing, logo, openSheet, closeSheet, sheetOpen, toast, copyTe
 import { t, tn, setLang, pickLang, LANGS, lang } from './i18n.js';
 
 const params = new URLSearchParams(location.search);
-const DEMO = params.get('demo') === '1';
+const DEMO = params.get('demo') === '1' && !W.inHost(); // the pretend wallet never runs inside the real one
 const REPO = 'https://github.com/swiftbotlab/kuza';
 const APP_URL = 'https://swiftbotlab.github.io/kuza/';
 const HOUR = 3600e3;
@@ -27,7 +27,7 @@ const root = () => document.getElementById('app');
 
 /* ---------- storage ---------- */
 
-const storeKey = () => `kuza.v1.${R.network}`;
+const storeKey = () => `kuza.${DEMO ? 'demo' : 'v1'}.${R.network}`;
 
 function loadState(key = storeKey()) {
   try {
@@ -70,10 +70,12 @@ function fiat(luna) {
 }
 
 function when(ms) {
+  if (!Number.isFinite(ms)) return '';
   return new Intl.DateTimeFormat(lang(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
 }
 
 function day(ms) {
+  if (!Number.isFinite(ms)) return '';
   return new Intl.DateTimeFormat(lang(), { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(ms));
 }
 
@@ -136,8 +138,8 @@ async function checkPending() {
       }
     }
   }
-  if (st.op?.hash) {
-    const tx = await C.getTx(st.op.hash).catch(() => null);
+  if (st.op) {
+    const tx = st.op.hash ? await C.getTx(st.op.hash).catch(() => null) : null;
     if (tx?.blockNumber || Date.now() - st.op.at > TX_WINDOW) {
       st.op = null;
       changed = true;
@@ -159,7 +161,7 @@ async function refreshGifts() {
 async function refreshJail(staker) {
   R.jail = 0;
   if (!staker?.delegation || !staker.inactive) return;
-  const v = await C.getValidator(staker.delegation).catch(() => null);
+  const v = await C.getValidator(staker.delegation);
   if (v?.jailedFrom) R.jail = v.jailedFrom + S.BLOCKS_PER_EPOCH * S.JAIL_EPOCHS + 1;
 }
 
@@ -184,7 +186,7 @@ async function sync() {
       st.baseline = staker ? staker.total : 0;
       saveState();
     }
-    await Promise.all([checkPending(), refreshJail(staker)]);
+    await Promise.all([checkPending(), refreshJail(staker).catch(() => {})]);
     finishWithdrawIfDone();
     if (Date.now() - lastGiftCheck > 60e3) {
       lastGiftCheck = Date.now();
@@ -196,7 +198,7 @@ async function sync() {
     R.online = false;
   } finally {
     R.syncing = false;
-    if (!sheetOpen()) render();
+    if (!sheetOpen() && !R.jar) render();
   }
   if (R.again) {
     R.again = false;
@@ -212,7 +214,7 @@ async function loadExtras() {
   if (fresh) R.validators = fresh;
   R.market = market;
   R.stats = stats;
-  if (!sheetOpen()) render();
+  if (!sheetOpen() && !R.jarSending) render();
 }
 
 /** The wallet's account list needs an approval, so it's only asked for when it's needed. */
@@ -285,7 +287,7 @@ async function settle(hash, goal) {
  * and blocks further sends. So every transaction is checked against the chain as it is now, right before asking.
  */
 async function walletReady() {
-  const ready = await W.getProvider().isConsensusEstablished().catch(() => true);
+  const ready = await W.getProvider().isConsensusEstablished().catch(() => false);
   if (!ready) toast(t('err.sync'), 'info', 5000);
   return ready;
 }
@@ -293,6 +295,8 @@ async function walletReady() {
 async function preflightStake(value, pool) {
   const staker = await C.getStaker(st.address);
   R.staker = staker;
+  await readWallet();
+  if (R.spendable === null || value > R.spendable) return { ok: false, why: 'err.balance' };
   const { route } = S.saveRoute(value, staker);
   if (route === 'aside' || route === 'invalid') return { ok: false };
   const target = route === 'new' ? pool?.address : staker.delegation;
@@ -311,7 +315,7 @@ async function stakeFor(goal, value, fromWallet, wanted, pool) {
     if (!(await walletReady())) return;
     const check = await preflightStake(value, pool);
     if (!check.ok) {
-      toast(t('err.invalid'), 'bad', 6000);
+      toast(t(check.why || 'err.invalid'), 'bad', 6000);
       return;
     }
     route = check.route;
@@ -364,10 +368,20 @@ function noteUnknown(err, kind) {
   }
 }
 
+/** Withdrawals act on the wallet's real account, so confirm it before working anything out. */
+async function sameAccount() {
+  const before = st.address;
+  if (!(await ensureFresh())) return false;
+  if (st.address === before) return true;
+  closeSheet(true);
+  render();
+  return false;
+}
+
 async function startCooling(goal, amount) {
   const provider = W.getProvider();
   try {
-    if (!(await walletReady())) return;
+    if (!(await sameAccount()) || !(await walletReady())) return;
     // Rewards may have landed since the sheet opened. What's left must be 0 or at least the network minimum.
     const staker = await C.getStaker(st.address);
     R.staker = staker;
@@ -389,7 +403,7 @@ async function startCooling(goal, amount) {
 async function stopCooling() {
   const provider = W.getProvider();
   try {
-    if (!(await walletReady())) return;
+    if (!(await sameAccount()) || !(await walletReady())) return;
     const staker = await C.getStaker(st.address);
     R.staker = staker;
     const hash = await provider.sendSetActiveStakeTransaction({ newActiveBalance: staker.active + staker.inactive });
@@ -443,7 +457,7 @@ async function runRelease() {
   closeSheet(true);
   let kind = 'retire';
   try {
-    if (!(await walletReady())) return undefined;
+    if (!(await sameAccount()) || !(await walletReady())) return undefined;
     const stage = await freshStage();
     if (stage.stage === 'retire') {
       const plan = S.retirePlan(R.staker);
@@ -733,9 +747,9 @@ function sheetGoal(goal = null, presetName = '') {
   const now = Date.now();
   let icn = goal?.icon || 'seed';
   const name = h('input', { type: 'text', maxlength: 40, value: goal?.name || presetName, placeholder: t('form.namePh'), autocomplete: 'off', 'data-rig': 'f-name' });
-  const target = h('input', { type: 'text', inputmode: 'decimal', value: goal ? String(goal.target / LUNA) : '', placeholder: '50000', autocomplete: 'off', 'data-rig': 'f-target' });
+  const target = h('input', { type: 'text', inputmode: 'decimal', value: goal ? plainNim(goal.target) : '', placeholder: '50000', autocomplete: 'off', 'data-rig': 'f-target' });
   const date = h('input', { type: 'date', value: goal?.date || '', min: new Date(now + 864e5).toISOString().slice(0, 10), 'data-rig': 'f-date' });
-  const weekly = h('input', { type: 'text', inputmode: 'decimal', value: goal?.weekly ? String(goal.weekly / LUNA) : '', placeholder: '0', autocomplete: 'off', 'data-rig': 'f-weekly' });
+  const weekly = h('input', { type: 'text', inputmode: 'decimal', value: goal?.weekly ? plainNim(goal.weekly) : '', placeholder: '0', autocomplete: 'off', 'data-rig': 'f-weekly' });
   const hint = h('p', { class: 'tiny mute' });
   const err = h('p', { class: 'tiny bad' });
   let touched = Boolean(goal?.weekly);
@@ -854,7 +868,7 @@ async function sheetSave(goal, { includeWallet = false, first = false, typed: ke
     else if (route.route === 'aside' && R.wallet !== null && newMoney + noted > R.wallet) kids.push(h('p', { class: 'tiny warn' }, t('save.asideOver', { amount: nim(R.wallet) })));
     info.replaceChildren(...kids);
     btn.disabled = !value || route.route === 'invalid' || tooMuch || (route.route === 'new' && !pool);
-    btn.textContent = route.route === 'aside' ? t('save.goAside', { amount: nim(newMoney) }) : staked ? t('save.goStake', { amount: nim(value) }) : t('save.go');
+    btn.textContent = route.route === 'aside' ? t('save.goAside', { amount: nim(newMoney, 5) }) : staked ? t('save.goStake', { amount: nim(value, 5) }) : t('save.go');
   };
 
   amount.addEventListener('input', render2);
@@ -998,7 +1012,7 @@ function sheetWithdraw(goal) {
 
   const prog = goal ? goalProgress(goal) : null;
   const suggested = Math.min(staker.active, prog ? prog.stake + prog.earned : staker.active);
-  const amount = h('input', { type: 'text', inputmode: 'decimal', value: String(suggested / LUNA), autocomplete: 'off', 'data-rig': 'w-amount' });
+  const amount = h('input', { type: 'text', inputmode: 'decimal', value: plainNim(suggested), autocomplete: 'off', 'data-rig': 'w-amount' });
   const msg = h('div', {});
   const btn = h('button', { class: 'btn danger wide', 'data-rig': 'w-submit' }, t('wd.start'));
   const check = () => {
@@ -1008,8 +1022,8 @@ function sheetWithdraw(goal) {
     if (res.reason === 'dust') {
       kids.push(h('p', { class: 'tiny warn' }, t('wd.dust')));
       kids.push(h('div', { class: 'quick' },
-        h('button', { type: 'button', class: 'chip-btn', onclick: () => { amount.value = String(res.all / LUNA); check(); } }, t('wd.all', { amount: nim(res.all) })),
-        res.max > 0 ? h('button', { type: 'button', class: 'chip-btn', onclick: () => { amount.value = String(res.max / LUNA); check(); } }, t('wd.leave', { amount: nim(res.max) })) : null));
+        h('button', { type: 'button', class: 'chip-btn', onclick: () => { amount.value = plainNim(res.all); check(); } }, t('wd.all', { amount: nim(res.all, 5) })),
+        res.max > 0 ? h('button', { type: 'button', class: 'chip-btn', onclick: () => { amount.value = plainNim(res.max); check(); } }, t('wd.leave', { amount: nim(res.max, 5) })) : null));
     } else if (res.reason === 'too_much') {
       kids.push(h('p', { class: 'tiny bad' }, t('wd.tooMuch', { amount: nim(res.max) })));
     } else if (res.reason === 'invalid') {
@@ -1065,40 +1079,71 @@ function viewJar() {
   const total = (gifts || []).reduce((sum, g) => sum + g.luna, 0);
   const inside = W.inHost() || DEMO;
   const wrongNet = inside && jar.net !== R.network;
-  const mine = st.address === jar.owner;
+  const mine = st.address === jar.owner || R.accounts.includes(jar.owner);
   const memoFor = (note) => J.buildMemo(jar.id, note);
   const amount = h('input', { type: 'text', inputmode: 'decimal', placeholder: '100', autocomplete: 'off', 'data-rig': 'j-amount' });
   const note = h('input', { type: 'text', maxlength: 40, placeholder: t('jar.notePh'), autocomplete: 'off', 'data-rig': 'j-note' });
   const err = h('p', { class: 'tiny bad' });
-  const btn = h('button', { class: 'btn primary wide', 'data-rig': 'j-send' }, t('jar.send'));
-  let sending = false;
+  const btn = h('button', { class: 'btn primary wide', 'data-rig': 'j-send', disabled: Boolean(R.jarSending) }, R.jarSending ? t('save.waiting') : t('jar.send'));
+  const label = () => {
+    const luna = toLuna(amount.value);
+    if (!R.jarSending) btn.textContent = luna ? t('jar.sendAmount', { amount: nim(luna, 5) }) : t('jar.send');
+  };
+  amount.addEventListener('input', label);
+  const release = () => {
+    R.jarSending = false;
+    btn.disabled = false;
+    label();
+  };
+  const finish = async (hash, luna) => {
+    const tx = await C.waitForTx(hash);
+    await loadJarGifts();
+    if (!tx) {
+      btn.textContent = t('save.waiting');
+      toast(t('toast.slow'), 'info', 6000);
+    } else if (tx.executionResult === false) {
+      toast(t('err.failedTx'), 'bad', 6000);
+      release();
+    } else {
+      R.jarSending = false;
+      renderJarDone(luna);
+    }
+  };
   btn.addEventListener('click', async () => {
-    if (sending) return;
+    if (R.jarSending) return;
     const luna = toLuna(amount.value);
     if (!luna) { err.textContent = t('form.errAmount'); return; }
     err.textContent = '';
-    sending = true;
+    R.jarSending = true;
     btn.disabled = true;
     btn.textContent = t('save.waiting');
+    const stop = (text) => { if (text) err.textContent = text; release(); };
+    let provider;
     try {
-      const provider = W.getProvider();
-      if (!(await walletReady())) throw Object.assign(new Error('syncing'), { handled: true });
-      if (!(await ensureFresh())) throw Object.assign(new Error('not connected'), { handled: true });
-      if (st.address === jar.owner) throw Object.assign(new Error('own jar'), { handled: true, text: t('jar.mine') });
-      if (R.spendable !== null && luna > R.spendable) throw Object.assign(new Error('too much'), { handled: true, text: t('save.tooMuch', { amount: nim(R.spendable) }) });
+      provider = W.getProvider();
+      if (!(await walletReady()) || !(await ensureFresh())) return stop();
+      if (st.address === jar.owner || R.accounts.includes(jar.owner)) return stop(t('jar.mine'));
+      if (R.spendable === null) return stop(t('err.balance'));
+      if (luna > R.spendable) return stop(t('save.tooMuch', { amount: nim(R.spendable) }));
+      // A payment to anything but a plain account could be refused and leave the sender's wallet waiting.
+      if ((await C.getAccountType(jar.owner)) !== 'basic') return stop(t('jar.notPayable'));
+    } catch {
+      return stop(t('err.network'));
+    }
+    try {
       const hash = await provider.sendBasicTransactionWithData({ recipient: jar.owner, value: luna, data: memoFor(note.value) });
       toast(t('jar.sent'), 'good');
-      await C.waitForTx(hash);
-      await loadJarGifts();
-      renderJarDone(luna);
-      return;
+      return finish(hash, luna);
     } catch (e) {
-      if (e.text) err.textContent = e.text;
-      else if (!e.handled) walletFailure(e);
+      const kind = W.classifyError(e);
+      walletFailure(e);
+      if (kind !== 'unknown' && kind !== 'network') return release();
+      // It may have gone out. The button stays off so it can't be paid twice.
+      const hash = W.errorHash(e);
+      if (hash) return finish(hash, luna);
+      btn.textContent = t('save.waiting');
     }
-    sending = false;
-    btn.disabled = false;
-    btn.textContent = t('jar.send');
+    return undefined;
   });
 
   const giftRows = gifts === null
@@ -1116,12 +1161,15 @@ function viewJar() {
         ? h('section', { class: 'card' }, h('p', { class: 'small' }, t('jar.mine')), h('a', { class: 'btn wide', href: `${location.pathname}${DEMO ? '?demo=1' : ''}#/goal/${jar.id}` }, t('jar.open')))
         : h('section', { class: 'card form' },
           h('h3', {}, t('jar.addTitle')),
+          h('p', { class: 'tiny mute' }, t('jar.trust')),
+          h('code', { class: 'mono', 'data-rig': 'j-owner' }, jar.owner),
           field(t('jar.amount'), amount),
-          h('div', { class: 'quick' }, [100, 1000, 5000].map((n) => h('button', { type: 'button', class: 'chip-btn', onclick: () => { amount.value = String(n); } }, fmtNim(n * LUNA, lang())))),
+          h('div', { class: 'quick' }, [100, 1000, 5000].map((n) => h('button', { type: 'button', class: 'chip-btn', onclick: () => { amount.value = String(n); label(); } }, fmtNim(n * LUNA, lang())))),
           field(t('jar.note'), note),
           h('p', { class: 'tiny mute' }, t('jar.public')),
           err, btn,
-          h('p', { class: 'tiny mute center' }, t('jar.direct', { address: shortAddress(jar.owner) })))
+          h('p', { class: 'tiny mute center' }, t('jar.direct')),
+          h('p', { class: 'tiny mute center' }, t('jar.countNote')))
     : h('section', { class: 'card form' },
       h('h3', {}, t('jar.addTitle')),
       h('a', { class: 'btn primary wide', href: openInPay(location.href) }, t('outside.open')),

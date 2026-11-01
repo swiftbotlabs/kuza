@@ -43,7 +43,10 @@ async function post(method, params, timeout) {
       err.answer = true; // the node answered; this isn't a connection problem
       throw err;
     }
-    return body.result?.data;
+    const data = body.result?.data;
+    // An empty 200 must never read as "this address has no stake".
+    if (data === undefined || data === null) throw new RpcError('empty answer');
+    return data;
   } finally {
     clearTimeout(timer);
   }
@@ -91,6 +94,12 @@ export async function getTx(hash) {
 export async function getHistory(address, max = 100) {
   const list = await call('getTransactionsByAddress', [address, Math.min(max, 500), null], { timeout: 12000 });
   return Array.isArray(list) ? list : [];
+}
+
+/** 'basic', 'htlc', 'staking' and so on. Null if the node doesn't say. */
+export async function getAccountType(address) {
+  const account = await call('getAccountByAddress', [address]);
+  return typeof account?.type === 'string' ? account.type : null;
 }
 
 export async function getValidator(address) {

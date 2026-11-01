@@ -8,10 +8,17 @@ export function toLuna(input) {
   if (typeof input === 'number') input = String(input);
   if (typeof input !== 'string') return null;
   const s = input.trim().replace(/\s/g, '').replace(',', '.');
+  // "1,000" or "1.000" could mean a thousand or one: refuse rather than guess.
+  if (/^\d{1,3}[.,]\d{3}$/.test(input.trim())) return null;
   if (!/^\d{1,14}(\.\d{0,5})?$/.test(s) && !/^\.\d{1,5}$/.test(s)) return null;
   const [whole = '0', frac = ''] = s.split('.');
   const luna = Number(whole || '0') * LUNA + Number((frac + '00000').slice(0, 5));
   return Number.isSafeInteger(luna) && luna <= MAX_LUNA ? luna : null;
+}
+
+/** Text for an amount field that toLuna reads back exactly. */
+export function plainNim(luna) {
+  return luna % LUNA === 0 ? String(luna / LUNA) : (luna / LUNA).toFixed(5);
 }
 
 export function toNim(luna) {

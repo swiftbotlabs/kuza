@@ -6,8 +6,8 @@ import { h } from './ui.js';
 import { MIN_STAKE, BLOCKS_PER_EPOCH, electionBlockAfter, releaseBlock } from './staking.js';
 
 const LUNA = 100000;
-const ME = 'NQ43 Y1RH P1K7 JH78 LRTS 95RY GAUU UBDK FFGX';
-const FRIEND = 'NQ15 HNAH YRVH DFVM YHAG BSXG 0QHK KA0Q XDR7';
+const ME = 'NQ49 DEMA 0000 0000 0000 0000 0000 0000 0001';
+const FRIEND = 'NQ22 DEMA 0000 0000 0000 0000 0000 0000 0002';
 const chain = {
   height: 65800000,
   wallet: 25000 * LUNA,
@@ -121,6 +121,7 @@ function backend(method, params) {
     }
     case 'getTransactionsByAddress': return chain.history.filter((t) => t.to === params[0] || t.from === params[0]);
     case 'getValidatorByAddress': return { address: params[0], jailedFrom: null, retired: false };
+    case 'getAccountByAddress': return { address: params[0], balance: 0, type: 'basic' };
     default: throw new Error(`demo: ${method}`);
   }
 }

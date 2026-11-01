@@ -2,3 +2,5 @@ node_modules/
 .wrangler/
 *.bak-*
 tmp-ui/
+.dev.vars
+.env*

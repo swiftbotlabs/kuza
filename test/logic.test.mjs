@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toLuna, fmtNim, normalizeAddress, shortAddress, cutBytes, hexToText, fmtFiat } from '../docs/js/nim.js';
+import { toLuna, plainNim, fmtNim, normalizeAddress, shortAddress, fmtFiat } from '../docs/js/nim.js';
 import * as S from '../docs/js/staking.js';
 import * as J from '../docs/js/jar.js';
 import * as G from '../docs/js/goals.js';
 
 const ADDR = 'NQ15 HNAH YRVH DFVM YHAG BSXG 0QHK KA0Q XDR7';
-const OWNER = 'NQ43 Y1RH P1K7 JH78 LRTS 95RY GAUU UBDK FFGX';
+const OWNER = 'NQ92 DEMA 0000 0000 0000 0000 0000 0000 0003';
 const NOW = Date.UTC(2026, 10, 1, 12);
 const WEEK = 7 * 864e5;
 const NIM = 100000;
@@ -17,9 +17,12 @@ test('toLuna parses amounts exactly and refuses junk', () => {
   assert.equal(toLuna('1,5'), 150000);
   assert.equal(toLuna('.00001'), 1);
   assert.equal(toLuna(' 2500 '), 250000000);
-  for (const bad of ['', 'abc', '-1', '1e5', '1.000001', '1..2', '0x10', '99999999999999999', '1.2.3', null, undefined, {}]) {
+  for (const bad of ['', 'abc', '-1', '1e5', '1.000001', '1..2', '0x10', '99999999999999999', '1.2.3', '1,000', '1.000', '12.345', null, undefined, {}]) {
     assert.equal(toLuna(bad), null, String(bad));
   }
+  assert.equal(toLuna('1000'), 1e8);
+  assert.equal(toLuna('1234.567'), 123456700);
+  for (const luna of [1, 100000, 12312300, 185012300, 123456789]) assert.equal(toLuna(plainNim(luna)), luna);
   assert.equal(toLuna('21000000000'), 21e14);
   assert.equal(toLuna('21000000001'), null);
 });
@@ -78,6 +81,7 @@ test('saveRoute enforces the 100 NIM floor the way the contract does', () => {
 test('withdrawStage walks the real path', () => {
   const h = 1000000;
   assert.equal(S.withdrawStage(null, h).stage, 'none');
+  for (const bad of [{ balance: 'x' }, { balance: -1 }, { balance: 1.5 }, { balance: 5, inactiveBalance: 5, inactiveFrom: 'soon' }]) assert.throws(() => S.normalizeStaker(bad));
   assert.equal(S.withdrawStage(S.normalizeStaker({ balance: 5 }), h).stage, 'active');
   const cooling = S.normalizeStaker({ balance: 0, inactiveBalance: 5, inactiveFrom: h });
   const s = S.withdrawStage(cooling, h);
@@ -129,7 +133,8 @@ test('jar link round trip and hostile input', () => {
   assert.ok(J.decodeJar(enc(good)));
   for (const bad of [
     { ...good, v: 2 }, { ...good, a: 'NQ00' }, { ...good, t: -1 }, { ...good, t: 1.5 }, { ...good, t: 3e15 },
-    { ...good, i: '../../x' }, { ...good, n: '' }, { ...good, d: '<script>' }, { ...good, e: 'x' }, null, [], 7,
+    { ...good, i: '../../x' }, { ...good, n: '' }, { ...good, d: '<script>' }, { ...good, d: '2026-99-99' }, { ...good, e: 'x' }, null, [], 7,
+    { ...good, a: S.STAKING_CONTRACT.replace(/ /g, '') }, { ...good, a: `NQ07${'0'.repeat(32)}` }, { ...good, a: 'NQ81C01NBASE00000000000000000000000000'.slice(0, 36) },
   ]) assert.equal(J.decodeJar(enc(bad)), null, JSON.stringify(bad));
   for (const bad of ['', '!!!', 'a'.repeat(513), undefined, 5, '%%%']) assert.equal(J.decodeJar(bad), null);
   assert.equal(J.decodeJar(enc({ ...good, n: 'a‮b\u0000c' })).name, 'a b c');
@@ -148,8 +153,8 @@ test('memo fits 64 bytes, with multibyte text too', () => {
 
 test('gifts: only real transfers to the owner, each once', () => {
   const memo = Buffer.from('KZ1|ab23cd|hi').toString('hex');
-  const tx = { hash: 'h1', to: OWNER, from: ADDR, value: 500, recipientData: memo, executionResult: true, timestamp: 5, blockNumber: 1 };
-  const out = J.giftsFromHistory([tx, tx, { ...tx, hash: 'h2', executionResult: false }, { ...tx, hash: 'h3', to: ADDR }, { ...tx, hash: 'h4', recipientData: '' }, { ...tx, hash: 'h5', value: 0 }], OWNER, 'ab23cd');
+  const tx = { hash: 'h1', to: OWNER, from: ADDR, value: 5 * NIM, recipientData: memo, executionResult: true, timestamp: 5, blockNumber: 1 };
+  const out = J.giftsFromHistory([tx, tx, { ...tx, hash: 'h2', executionResult: false }, { ...tx, hash: 'h3', to: ADDR }, { ...tx, hash: 'h4', recipientData: '' }, { ...tx, hash: 'h5', value: 0 }, { ...tx, hash: 'h6', value: NIM - 1 }, { ...tx, hash: 'h7', from: OWNER }], OWNER, 'ab23cd');
   assert.equal(out.length, 1);
   assert.equal(out[0].note, 'hi');
   assert.equal(J.giftsFromHistory([tx], OWNER, 'zzzzzz').length, 0);
@@ -226,6 +231,9 @@ test('mergeGifts only adds new gifts to known goals', () => {
   assert.equal(G.mergeGifts([g], [gift, gift, { ...gift, hash: 'h2', goal: 'nope22' }]), 1);
   assert.equal(G.mergeGifts([g], [gift]), 0);
   assert.equal(G.parts(g).gifts, 5);
+  const many = Array.from({ length: 700 }, (_, i) => ({ ...gift, hash: `x${i}` }));
+  G.mergeGifts([g], many);
+  assert.equal(g.entries.filter((e) => e.kind === 'gift').length, 500);
 });
 
 test('sanitizeState drops broken data', () => {
@@ -233,5 +241,10 @@ test('sanitizeState drops broken data', () => {
   assert.equal(s.goals.length, 1);
   assert.equal(s.goals[0].entries.length, 1);
   assert.deepEqual(G.sanitizeState('junk').goals, []);
+  const dirty = G.sanitizeState({ v: 1, goals: [{ id: 'a', name: 'n', target: 5, date: '2026-99-99', createdAt: 'x', entries: [{ kind: 'stake', luna: 3, status: 'weird', hash: '<img>', at: 'soon', fromWallet: 'x', extra: 1 }] }] });
+  assert.deepEqual(dirty.goals[0].entries[0], { kind: 'stake', luna: 3, at: 0, status: 'failed' });
+  assert.equal(dirty.goals[0].date, null);
+  const long = G.sanitizeState({ v: 1, goals: [{ id: 'a', name: 'n', target: 5, entries: Array.from({ length: 2100 }, (_, i) => ({ kind: 'aside', luna: i, status: 'ok' })) }] });
+  assert.equal(long.goals[0].entries[0].luna, 100);
   assert.deepEqual(G.sanitizeState({ v: 9 }).goals, []);
 });
