@@ -10,6 +10,11 @@ test('trimValidators keeps restaking pools, sorted, without logos', () => {
   assert.ok(!('logo' in out[0]));
 });
 
+test('equally reliable pools sort by fee', () => {
+  const out = trimValidators([v({ name: 'Dear', fee: 0.05, score: { total: 0.999 } }), v({ name: 'Cheap', fee: 0.01, score: { total: 0.996 } }), v({ name: 'Shaky', fee: 0, score: { total: 0.8 } })]);
+  assert.deepEqual(out.map((x) => x.name), ['Cheap', 'Dear', 'Shaky']);
+});
+
 test('trimValidators cleans upstream values', () => {
   const [x] = trimValidators([v({ accentColor: 'red;background:url(x)', payoutSchedule: '0 */6 * * *', name: 'x'.repeat(99) })]);
   assert.equal(x.color, '#1f2348');

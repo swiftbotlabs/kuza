@@ -114,7 +114,7 @@ export function trimValidators(list) {
       schedule: /^[\w ,.:-]{0,32}$/.test(v.payoutSchedule || '') && !/\*/.test(v.payoutSchedule || '') ? v.payoutSchedule : '',
       share: typeof v.dominanceRatio === 'number' ? Math.round(v.dominanceRatio * 10000) / 10000 : null,
     }))
-    .sort((a, b) => b.score - a.score || a.fee - b.fee)
+    .sort((a, b) => Math.round(b.score * 100) - Math.round(a.score * 100) || a.fee - b.fee) // equally reliable: cheapest first
     .slice(0, 12);
 }
 

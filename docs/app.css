@@ -140,6 +140,7 @@ main { display: flex; flex-direction: column; gap: 12px; }
 .entry > div:first-child { min-width: 0; overflow-wrap: anywhere; }
 
 .welcome { align-items: stretch; padding-top: 4px; gap: 14px; }
+.page > .welcome:first-child { padding-top: 36px; }
 .welcome-mark { display: grid; place-items: center; }
 .welcome h1 { text-align: center; font-size: 27px; }
 .lead { text-align: center; color: var(--mute); }
@@ -188,7 +189,7 @@ input:focus, select:focus { border-color: var(--gold); }
 .step.now .step-n { background: var(--gold); color: #fff; }
 .step.done .step-n { background: var(--green); color: #fff; }
 
-#toast { position: fixed; left: 0; right: 0; bottom: calc(18px + var(--safe-b)); z-index: 40; display: flex; justify-content: center; padding: 0 16px; pointer-events: none; }
+#toast { position: fixed; left: 0; right: 0; top: 10px; z-index: 40; display: flex; justify-content: center; padding: 0 16px; pointer-events: none; }
 .toast { background: var(--ink); color: #fff; padding: 11px 16px; border-radius: 13px; font-size: 14px; font-weight: 600; max-width: 440px; box-shadow: 0 8px 22px rgba(0, 0, 0, .25); animation: rise .18s ease-out; }
 .toast.good { background: #0d6f61; }
 .toast.bad { background: var(--red); }
