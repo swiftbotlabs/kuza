@@ -270,6 +270,12 @@ async function settle(hash, goal) {
  * The wallet's co-signer can refuse a transaction the network wouldn't accept, and the wallet then waits on it
  * and blocks further sends. So every transaction is checked against the chain as it is now, right before asking.
  */
+async function walletReady() {
+  const ready = await W.getProvider().isConsensusEstablished().catch(() => true);
+  if (!ready) toast(t('err.sync'), 'info', 5000);
+  return ready;
+}
+
 async function preflightStake(value, pool) {
   const staker = await C.getStaker(st.address);
   R.staker = staker;
@@ -288,6 +294,7 @@ async function stakeFor(goal, value, fromWallet, wanted, pool) {
   const entry = { kind: 'stake', luna: value, fromWallet, hash: null, at: Date.now(), status: 'pending' };
   let route = wanted;
   try {
+    if (!(await walletReady())) return;
     const check = await preflightStake(value, pool);
     if (!check.ok) {
       toast(t('err.invalid'), 'bad', 6000);
@@ -346,6 +353,7 @@ function noteUnknown(err, kind) {
 async function startCooling(goal, amount) {
   const provider = W.getProvider();
   try {
+    if (!(await walletReady())) return;
     // Rewards may have landed since the sheet opened. What's left must be 0 or at least the network minimum.
     const staker = await C.getStaker(st.address);
     R.staker = staker;
@@ -368,6 +376,7 @@ async function startCooling(goal, amount) {
 async function stopCooling() {
   const provider = W.getProvider();
   try {
+    if (!(await walletReady())) return;
     const staker = await C.getStaker(st.address);
     R.staker = staker;
     const hash = await provider.sendSetActiveStakeTransaction({ newActiveBalance: staker.active + staker.inactive });
@@ -422,6 +431,7 @@ async function runRelease() {
   closeSheet(true);
   let kind = 'retire';
   try {
+    if (!(await walletReady())) return undefined;
     const stage = await freshStage();
     if (stage.stage === 'retire') {
       const plan = S.retirePlan(R.staker);
@@ -1052,6 +1062,7 @@ function viewJar() {
     btn.textContent = t('save.waiting');
     try {
       const provider = W.getProvider();
+      if (!(await walletReady())) throw Object.assign(new Error('syncing'), { handled: true });
       if (!(await ensureFresh())) throw Object.assign(new Error('not connected'), { handled: true });
       if (st.address === jar.owner) throw Object.assign(new Error('own jar'), { handled: true, text: t('jar.mine') });
       if (R.spendable !== null && luna > R.spendable) throw Object.assign(new Error('too much'), { handled: true, text: t('save.tooMuch', { amount: nim(R.spendable) }) });
@@ -1220,10 +1231,8 @@ async function boot() {
     render();
     return undefined;
   }
-  if (st.address) {
-    await sync();
-    setInterval(() => { if (!document.hidden && !sheetOpen()) sync(); }, 30e3);
-  }
+  setInterval(() => { if (!document.hidden && !sheetOpen()) sync(); }, 30e3);
+  await sync();
   return undefined;
 }
 
