@@ -5,7 +5,7 @@
 //  - serves a NIM price and a network reward estimate, so the app doesn't call those services directly.
 // No IP addresses, user agents or anything else about the caller are stored.
 
-const ORIGINS = new Set(['https://swiftbotlab.github.io']);
+const ORIGINS = new Set(['https://kuza.swiftbotlab.workers.dev']);
 const VALIDATORS = {
   main: 'https://validators-api-main.je-cf9.workers.dev/api/v1/validators',
   test: 'https://validators-api-test.je-cf9.workers.dev/api/v1/validators',
@@ -227,7 +227,7 @@ async function handle(request, env, ctx) {
       return { price: p, rate: grossRate(s), stakedRatio: s?.staking && s?.total ? Math.round((s.staking / s.total) * 1000) / 1000 : null, at: Date.now() };
     }, (d) => d.price.usd > 0 && d.rate);
   }
-  if (path === '/') return json({ name: 'kuza-api', source: 'https://github.com/swiftbotlab/kuza' }, request);
+  if (path === '/') return json({ name: 'kuza-api', source: 'https://github.com/swiftbotlabs/kuza' }, request);
   return json({ error: 'not found' }, request, 404);
 }
 

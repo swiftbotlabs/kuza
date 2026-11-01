@@ -248,7 +248,7 @@ async function main() {
     await t.waitText('Your invite link');
     await t.shot(`${OUT}/07-share.png`);
     const link = await t.eval(`document.querySelector('[data-rig=share-link]').value`);
-    check('share: link is on the public URL', link.startsWith('https://swiftbotlab.github.io/kuza/?jar='));
+    check('share: link is on the public URL', link.startsWith('https://kuza.swiftbotlab.workers.dev/?jar='));
     await t.click('[data-rig=sheet-close]');
 
     // Break the goal: dust rule first.

@@ -5,7 +5,7 @@ Savings goals in your own NIM stake, as a Mini App for [Nimiq Pay](https://nimiq
 You set a goal. Your NIM goes into your own stake with a validator, so it earns while it waits. Kuza never holds it:
 every move is a transaction you approve in Nimiq Pay.
 
-**Live:** https://swiftbotlab.github.io/kuza/ (open it in Nimiq Pay under Mini Apps. A normal browser shows a landing
+**Live:** https://kuza.swiftbotlab.workers.dev/ (open it in Nimiq Pay under Mini Apps. A normal browser shows a landing
 page with a demo that uses pretend NIM.)
 
 <p>

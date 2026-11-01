@@ -13,8 +13,8 @@ import { t, tn, setLang, pickLang, LANGS, lang } from './i18n.js';
 
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo') === '1' && !W.inHost(); // the pretend wallet never runs inside the real one
-const REPO = 'https://github.com/swiftbotlab/kuza';
-const APP_URL = 'https://swiftbotlab.github.io/kuza/';
+const REPO = 'https://github.com/swiftbotlabs/kuza';
+const APP_URL = 'https://kuza.swiftbotlab.workers.dev/';
 const HOUR = 3600e3;
 const TX_WINDOW = 2.5 * HOUR; // a transaction not mined after its validity window never will be
 

@@ -37,8 +37,7 @@ Everything from a link, the chain, the Worker or the RPC node is treated as data
   from the owner and gifts past 500 per goal are ignored, because a goal id is public once its link is shared.
 - Pool lists and prices are checked in the page as well as in the Worker.
 - A Content-Security-Policy limits scripts to this origin and network calls to this origin, the two RPC hosts and the
-  Worker. `swiftbotlab.github.io` also hosts other sites of ours, so that origin and its browser storage are shared
-  with them.
+  Worker. The app has its own host, so that origin and its browser storage are not shared with any other site.
 - The Worker checks origin, body size and hash format, and reads upstream responses and request bodies with a size cap.
 
 ## Transactions
@@ -56,5 +55,5 @@ sender to pay only if they know who sent the link.
 
 ## Reporting a problem
 
-Open an issue at https://github.com/swiftbotlab/kuza/issues. For anything sensitive, ask for a private channel there
+Open an issue at https://github.com/swiftbotlabs/kuza/issues. For anything sensitive, ask for a private channel there
 first and leave out the details.
