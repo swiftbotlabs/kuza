@@ -177,6 +177,8 @@ test('earned is what the staker has beyond the baseline and deposits', () => {
   assert.equal(G.earnedTotal(152 * NIM, 0, [g]), 2 * NIM);
   assert.equal(G.earnedTotal(1152 * NIM, 1000 * NIM, [g]), 2 * NIM);
   assert.equal(G.earnedTotal(100 * NIM, 0, [g]), 0);
+  const settling = goal([ok('stake', 150 * NIM, NOW), { kind: 'stake', luna: 50 * NIM, at: NOW, status: 'pending' }]);
+  assert.equal(G.earnedTotal(201 * NIM, 0, [settling]), NIM);
   const h = goal([ok('stake', 50 * NIM, NOW)], { id: 'zz23zz' });
   assert.equal(G.earnedShare(g, [g, h], 4 * NIM), 3 * NIM);
   assert.equal(G.earnedShare(h, [g, h], 4 * NIM), 1 * NIM);

@@ -166,7 +166,11 @@ async function refreshJail(staker) {
 let lastGiftCheck = 0;
 
 async function sync() {
-  if (R.syncing || !st.address) return;
+  if (!st.address) return;
+  if (R.syncing) {
+    R.again = true;
+    return;
+  }
   R.syncing = true;
   try {
     const provider = W.getProvider();
@@ -193,6 +197,10 @@ async function sync() {
   } finally {
     R.syncing = false;
     if (!sheetOpen()) render();
+  }
+  if (R.again) {
+    R.again = false;
+    await sync();
   }
 }
 
@@ -260,8 +268,14 @@ function walletFailure(err) {
 async function settle(hash, goal) {
   const tx = await C.waitForTx(hash);
   await sync();
-  if (!tx) return toast(t('toast.slow'), 'info', 6000);
-  if (tx.executionResult === false) return toast(t('err.failedTx'), 'bad', 6000);
+  if (!tx) {
+    toast(t('toast.slow'), 'info', 6000);
+    return null;
+  }
+  if (tx.executionResult === false) {
+    toast(t('err.failedTx'), 'bad', 6000);
+    return null;
+  }
   if (goal) toast(t('toast.saved'), 'good');
   return tx;
 }
@@ -365,8 +379,7 @@ async function startCooling(goal, amount) {
     saveState();
     closeSheet(true);
     render();
-    await settle(hash);
-    toast(t('toast.cooling'), 'good');
+    if (await settle(hash)) toast(t('toast.cooling'), 'good');
   } catch (err) {
     noteUnknown(err, 'cool');
     walletFailure(err);
@@ -385,8 +398,7 @@ async function stopCooling() {
     saveState();
     closeSheet(true);
     render();
-    await settle(hash);
-    toast(t('toast.resumed'), 'good');
+    if (await settle(hash)) toast(t('toast.resumed'), 'good');
   } catch (err) {
     noteUnknown(err, 'uncool');
     walletFailure(err);
@@ -408,7 +420,7 @@ async function remove(amount) {
   const provider = W.getProvider();
   const hash = await provider.sendRemoveStakeTransaction({ value: amount });
   st.op = { kind: 'remove', hash, at: Date.now() };
-  st.unstake = { ...(st.unstake || { goal: null }), removing: amount };
+  st.unstake = { goal: st.unstake?.goal ?? null, amount: st.unstake?.amount ?? amount, at: st.unstake?.at ?? Date.now(), removing: amount };
   saveState();
   render();
   const tx = await C.waitForTx(hash);
@@ -784,7 +796,7 @@ function sheetDelete(goal) {
 
 const hasPending = () => Boolean(st.op) || st.goals.some((g) => g.entries.some((e) => e.status === 'pending'));
 
-async function sheetSave(goal, { includeWallet = false, first = false } = {}) {
+async function sheetSave(goal, { includeWallet = false, first = false, typed: keep = null } = {}) {
   if (hasPending()) {
     sync();
     toast(t('wd.waitOp'));
@@ -796,7 +808,7 @@ async function sheetSave(goal, { includeWallet = false, first = false } = {}) {
   const prog = goalProgress(goal);
   const due = G.dueNow(goal, Date.now());
   const preset = includeWallet ? 0 : (due?.left ?? 0);
-  const amount = h('input', { type: 'text', inputmode: 'decimal', value: preset ? String(Math.ceil(preset / LUNA)) : '', placeholder: '0', autocomplete: 'off', 'data-rig': 's-amount' });
+  const amount = h('input', { type: 'text', inputmode: 'decimal', value: keep ?? (preset ? String(Math.ceil(preset / LUNA)) : ''), placeholder: '0', autocomplete: 'off', 'data-rig': 's-amount' });
   const info = h('div', { class: 'route' });
   const fiatLine = h('p', { class: 'tiny mute' });
   const btn = h('button', { class: 'btn primary wide', 'data-rig': 's-submit' }, t('save.go'));
@@ -818,7 +830,14 @@ async function sheetSave(goal, { includeWallet = false, first = false } = {}) {
     const kids = [];
     if (route.route === 'new') {
       kids.push(h('p', { class: 'small' }, t('save.routeNew')));
-      kids.push(poolRow(pool, () => sheetPools((p) => { pool = p; sheetSave(goal, { includeWallet: useWallet }); })));
+      kids.push(poolRow(pool, () => {
+        const typedNow = amount.value;
+        sheetPools((p) => {
+          st.validator = p.address;
+          saveState();
+          sheetSave(goal, { includeWallet: useWallet, typed: typedNow });
+        });
+      }));
     } else if (route.route === 'add') {
       const name = poolOf(R.staker?.delegation)?.name;
       kids.push(h('p', { class: 'small' }, name ? t('save.routeAddPool', { name }) : t('save.routeAdd')));

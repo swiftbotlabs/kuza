@@ -162,6 +162,13 @@ async function main() {
     await t.eval(`document.querySelector('[data-rig=s-wallet]').click()`);
     await t.waitText('Stake 160 NIM');
     await t.shot(`${OUT}/05-save-stake.png`);
+    const before = await t.eval(`document.querySelector('[data-rig=s-pool] b').textContent`);
+    await t.click('[data-rig=s-pool]');
+    await t.waitText('Choose a pool');
+    await t.eval(`document.querySelectorAll('.sheet .pool')[1].click()`);
+    await t.waitText('Stake 160 NIM');
+    const after = await t.eval(`document.querySelector('[data-rig=s-pool] b').textContent`);
+    check('pool choice sticks and the amount is kept', before !== after);
     await t.click('[data-rig=s-submit]');
     await t.waitText('Pretend wallet');
     await t.click('[data-rig=demo-no]');

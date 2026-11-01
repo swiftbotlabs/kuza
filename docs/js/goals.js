@@ -52,12 +52,17 @@ export function totalPrincipal(goals) {
   return goals.reduce((sum, g) => sum + parts(g).stake, 0);
 }
 
+/** Deposits sent but not yet confirmed by the app. They may already be in the staker's balance. */
+function pendingStake(goals) {
+  return goals.reduce((sum, g) => sum + g.entries.filter((e) => e.status === 'pending' && e.kind === 'stake').reduce((n, e) => n + e.luna, 0), 0);
+}
+
 /**
  * Rewards so far = what the staker holds now, minus what was there before Kuza, minus what the goals put in.
- * Comes out as 0 rather than negative while a deposit is still settling.
+ * Deposits still confirming don't count as rewards, and it comes out as 0 rather than negative.
  */
 export function earnedTotal(stakerTotal, baseline, goals) {
-  return Math.max(0, (stakerTotal || 0) - (baseline || 0) - totalPrincipal(goals));
+  return Math.max(0, (stakerTotal || 0) - (baseline || 0) - totalPrincipal(goals) - pendingStake(goals));
 }
 
 /** Rewards shared out by each open goal's stake. */
