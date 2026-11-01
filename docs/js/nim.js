@@ -9,7 +9,7 @@ export function toLuna(input) {
   if (typeof input !== 'string') return null;
   const s = input.trim().replace(/\s/g, '').replace(',', '.');
   // "1,000" or "1.000" could mean a thousand or one: refuse rather than guess.
-  if (/^\d{1,3}[.,]\d{3}$/.test(input.trim())) return null;
+  if (/^[1-9]\d{0,2}[.,]\d{3}$/.test(input.trim())) return null;
   if (!/^\d{1,14}(\.\d{0,5})?$/.test(s) && !/^\.\d{1,5}$/.test(s)) return null;
   const [whole = '0', frac = ''] = s.split('.');
   const luna = Number(whole || '0') * LUNA + Number((frac + '00000').slice(0, 5));

@@ -69,13 +69,15 @@ function fiat(luna) {
   return own ? fmtFiat(luna, own, fiatCode(), lang()) : fmtFiat(luna, prices.usd, 'USD', lang());
 }
 
+const validDate = (ms) => Math.abs(ms) <= 8.64e15;
+
 function when(ms) {
-  if (!Number.isFinite(ms)) return '';
+  if (!validDate(ms)) return '';
   return new Intl.DateTimeFormat(lang(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
 }
 
 function day(ms) {
-  if (!Number.isFinite(ms)) return '';
+  if (!validDate(ms)) return '';
   return new Intl.DateTimeFormat(lang(), { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(ms));
 }
 
@@ -1113,6 +1115,7 @@ function viewJar() {
     if (R.jarSending) return;
     const luna = toLuna(amount.value);
     if (!luna) { err.textContent = t('form.errAmount'); return; }
+    if (luna < LUNA) { err.textContent = t('jar.min'); return; }
     err.textContent = '';
     R.jarSending = true;
     btn.disabled = true;
@@ -1296,7 +1299,7 @@ async function boot() {
   }
   if (R.jar) {
     await loadJarGifts();
-    render();
+    if (!R.jarSending) render();
     return undefined;
   }
   setInterval(() => { if (!document.hidden && !sheetOpen()) sync(); }, 30e3);

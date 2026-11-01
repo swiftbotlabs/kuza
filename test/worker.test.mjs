@@ -38,5 +38,7 @@ test('callerKey groups an IPv6 /64', () => {
   const req = (ip) => ({ headers: new Headers({ 'cf-connecting-ip': ip }) });
   assert.equal(callerKey(req('2001:db8:1:2:aaaa::1')), callerKey(req('2001:db8:1:2:bbbb::9')));
   assert.notEqual(callerKey(req('2001:db8:1:3::1')), callerKey(req('2001:db8:1:2::1')));
+  assert.equal(callerKey(req('2001:db8::1234:5678:9abc:def0')), '2001:db8:0:0');
+  assert.equal(callerKey(req('2001:db8::1')), '2001:db8:0:0');
   assert.equal(callerKey(req('203.0.113.7')), '203.0.113.7');
 });

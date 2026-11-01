@@ -11,8 +11,8 @@ const NOBODY = new Set([STAKING_CONTRACT, 'NQ07 0000 0000 0000 0000 0000 0000 00
 
 export function cleanText(input, maxChars) {
   if (typeof input !== 'string') return '';
-  // Control and bidi characters have no place in a name or a public note.
-  const noCtl = input.replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]/g, ' ');
+  // Control, format and bidi characters and blank look-alikes have no place in a name or a public note.
+  const noCtl = input.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u115F\u1160\u3164\uFFA0]/gu, ' ');
   return [...noCtl.replace(/\s+/g, ' ').trim()].slice(0, maxChars).join('');
 }
 
@@ -77,7 +77,7 @@ export function giftsFromHistory(txs, owner, goalId) {
     if (!memo || (goalId && memo.id !== goalId)) continue;
     if (!Number.isSafeInteger(tx.value) || tx.value < LUNA) continue;
     seen.add(tx.hash);
-    out.push({ hash: tx.hash, goal: memo.id, note: memo.note, luna: tx.value, from: tx.from, at: tx.timestamp || 0, block: tx.blockNumber });
+    out.push({ hash: tx.hash, goal: memo.id, note: memo.note, luna: tx.value, from: tx.from, at: Math.abs(tx.timestamp) <= 8.64e15 ? tx.timestamp : 0, block: tx.blockNumber });
   }
   return out.sort((a, b) => b.at - a.at);
 }

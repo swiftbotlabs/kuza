@@ -29,7 +29,12 @@ function cors(request) {
 /** The caller's IP, or for IPv6 its /64, since one host can rotate through a whole /64. Never stored. */
 export function callerKey(request) {
   const ip = request.headers.get('cf-connecting-ip') || '';
-  return ip.includes(':') ? ip.split(':').slice(0, 4).join(':') : ip;
+  if (!ip.includes(':')) return ip;
+  const [head, tail] = ip.split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const fill = ip.includes('::') ? Array(Math.max(0, 8 - left.length - right.length)).fill('0') : [];
+  return [...left, ...fill, ...right].slice(0, 4).join(':');
 }
 
 function json(data, request, status = 200, extra = {}) {
@@ -150,6 +155,7 @@ export class Counter {
     this.sql = state.storage.sql;
     this.recent = new Map(); // memory only: new wallets per caller per hour
     this.sql.exec('CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, day TEXT NOT NULL)');
+    this.sql.exec('CREATE INDEX IF NOT EXISTS seen_day ON seen (day)');
   }
 
   add(id, caller) {

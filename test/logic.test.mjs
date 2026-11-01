@@ -17,10 +17,12 @@ test('toLuna parses amounts exactly and refuses junk', () => {
   assert.equal(toLuna('1,5'), 150000);
   assert.equal(toLuna('.00001'), 1);
   assert.equal(toLuna(' 2500 '), 250000000);
-  for (const bad of ['', 'abc', '-1', '1e5', '1.000001', '1..2', '0x10', '99999999999999999', '1.2.3', '1,000', '1.000', '12.345', null, undefined, {}]) {
+  for (const bad of ['', 'abc', '-1', '1e5', '1.000001', '1..2', '0x10', '99999999999999999', '1.2.3', '1,000', '1.000', '12.345', '2,500', null, undefined, {}]) {
     assert.equal(toLuna(bad), null, String(bad));
   }
   assert.equal(toLuna('1000'), 1e8);
+  assert.equal(toLuna('0.125'), 12500);
+  assert.equal(toLuna('0,125'), 12500);
   assert.equal(toLuna('1234.567'), 123456700);
   for (const luna of [1, 100000, 12312300, 185012300, 123456789]) assert.equal(toLuna(plainNim(luna)), luna);
   assert.equal(toLuna('21000000000'), 21e14);
@@ -137,7 +139,7 @@ test('jar link round trip and hostile input', () => {
     { ...good, a: S.STAKING_CONTRACT.replace(/ /g, '') }, { ...good, a: `NQ07${'0'.repeat(32)}` }, { ...good, a: 'NQ81C01NBASE00000000000000000000000000'.slice(0, 36) },
   ]) assert.equal(J.decodeJar(enc(bad)), null, JSON.stringify(bad));
   for (const bad of ['', '!!!', 'a'.repeat(513), undefined, 5, '%%%']) assert.equal(J.decodeJar(bad), null);
-  assert.equal(J.decodeJar(enc({ ...good, n: 'a‮b\u0000c' })).name, 'a b c');
+  assert.equal(J.decodeJar(enc({ ...good, n: 'a\u202eb\u0000c\u061cd\u3164e\u00adf\u2060g\ufff9h\u{e0041}i' })).name, 'a b c d e f g h i');
 });
 
 test('memo fits 64 bytes, with multibyte text too', () => {

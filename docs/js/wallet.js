@@ -23,6 +23,7 @@ export function classifyError(err) {
   if (type === 'INVALID_TRANSACTION' || type === 'INVALID_REQUEST' || code === -32602) return 'invalid';
   if (type === 'UNKNOWN_REQUEST' || code === 4200) return 'unsupported';
   if (/still pending|already in progress/i.test(err?.message || '')) return 'busy';
+  if (/timed? ?out/i.test(err?.message || '')) return 'unknown'; // the wallet may still act on it
   return 'other';
 }
 

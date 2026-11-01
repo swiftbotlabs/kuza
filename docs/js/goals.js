@@ -158,7 +158,7 @@ export function mergeGifts(goals, gifts) {
 
 function cleanEntry(e) {
   if (!e || !KINDS.has(e.kind) || !Number.isSafeInteger(e.luna) || e.luna < 0) return null;
-  const out = { kind: e.kind, luna: e.luna, at: Number.isFinite(e.at) ? e.at : 0, status: STATUSES.has(e.status) ? e.status : 'failed' };
+  const out = { kind: e.kind, luna: e.luna, at: Math.abs(e.at) <= 8.64e15 ? e.at : 0, status: STATUSES.has(e.status) ? e.status : 'failed' };
   if (typeof e.hash === 'string' && /^[0-9a-fA-F]{64}$/.test(e.hash)) out.hash = e.hash;
   if (Number.isSafeInteger(e.fromWallet) && e.fromWallet >= 0) out.fromWallet = e.fromWallet;
   if (Number.isSafeInteger(e.block)) out.block = e.block;

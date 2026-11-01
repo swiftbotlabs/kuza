@@ -106,7 +106,7 @@ export async function getValidator(address) {
   try {
     return await call('getValidatorByAddress', [address]);
   } catch (err) {
-    if (err.answer) return null;
+    if (err.answer && /no validator/i.test(err.message)) return null;
     throw err;
   }
 }
