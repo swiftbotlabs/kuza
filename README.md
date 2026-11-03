@@ -14,7 +14,7 @@ page with a demo that uses pretend NIM.)
   <img src="docs/img/shots/cooling.png" width="240" alt="The cooling-off steps">
 </p>
 
-*Screenshots from the real Nimiq Pay app on testnet.*
+*Screenshots from the real Nimiq Pay app on mainnet, on a real Android phone, with real NIM.*
 
 ## What it does
 
@@ -38,10 +38,20 @@ Reward figures are estimates and they change. They're labelled that way in the a
 
 ## Tested so far
 
-In the real Nimiq Pay app on testnet: connecting and cancelling, creating a goal, setting NIM aside, a new stake, a
-top-up under 100 NIM, sending a gift with a note, starting a cooling-off, and goals surviving a close and reopen.
-Finishing a withdrawal (retire and remove) on a real wallet is still to come, because it needs the cooling-off to run
-out. On mainnet, the wait below matches the on-chain history of a real staker.
+On mainnet, in the real Nimiq Pay app on two real Android phones, with real NIM. Each transaction was read back from
+the chain:
+
+| Step | Transaction | Block |
+|---|---|---|
+| New stake, 1,000 NIM | [`4154661745fa442c…`](https://nimiq.watch/#4154661745fa442c9c4dc3963ca1002de00405d063934b60e3e34e468e5ffc8e) | 65,870,430 |
+| Top-up, 60 NIM | [`200eaaef6344b261…`](https://nimiq.watch/#200eaaef6344b26195f175436e45dfd9f2cc644f27360c0fb44810a99e528e4b) | 65,870,509 |
+| Stop earning on 60 NIM | [`0b29e3e1a92eb5b8…`](https://nimiq.watch/#0b29e3e1a92eb5b8039f81004a6da78cfa0304fe978159d9cc386c2644c9edda) | 65,870,706 |
+| A friend's gift, 100 NIM with a note, from a second phone | [`6a449594631de6e0…`](https://nimiq.watch/#6a449594631de6e0ca7ba6e88409ae82b36c0db66ffa1a93726c3179f6336b50) | 65,872,372 |
+
+Also on mainnet: connecting, the safety warning on an invite link, the live cooling-off, the gift counted toward the
+goal, and goals surviving a close and reopen. Before that, every flow ran on testnet, on an emulator and a real phone.
+Still to come: retire and remove, once this cooling-off ends (release at block 65,923,200, about 13:14 UTC on 3 Nov).
+All wallets above are our own test wallets.
 
 ## How the unstaking wait is worked out
 
