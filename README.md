@@ -47,11 +47,17 @@ the chain:
 | Top-up, 60 NIM | [`200eaaef6344b261…`](https://nimiq.watch/#200eaaef6344b26195f175436e45dfd9f2cc644f27360c0fb44810a99e528e4b) | 65,870,509 |
 | Stop earning on 60 NIM | [`0b29e3e1a92eb5b8…`](https://nimiq.watch/#0b29e3e1a92eb5b8039f81004a6da78cfa0304fe978159d9cc386c2644c9edda) | 65,870,706 |
 | A friend's gift, 100 NIM with a note, from a second phone | [`6a449594631de6e0…`](https://nimiq.watch/#6a449594631de6e0ca7ba6e88409ae82b36c0db66ffa1a93726c3179f6336b50) | 65,872,372 |
+| The gift moved into the stake, 100 NIM | [`f196139159689150…`](https://nimiq.watch/#f196139159689150dd50ef37cee031f53bc66e7c16220e7db5fc5351139a9140) | 65,872,612 |
+| Retire the released 60 NIM, after the cooling-off | [`0386938fbc602dea…`](https://nimiq.watch/#0386938fbc602dea0fcfe92332731a8b0d197c5588ba66f30c90fe5a896d3768) | 65,924,317 |
+| Remove: 60 NIM from the staking contract back to the wallet | [`fbd6cde2ef983414…`](https://nimiq.watch/#fbd6cde2ef9834146a0ec0e608cdab924982819549c9658f8e115e0babe58eb2) | 65,924,337 |
 
-Also on mainnet: connecting, the safety warning on an invite link, the live cooling-off, the gift counted toward the
-goal, and goals surviving a close and reopen. Before that, every flow ran on testnet, on an emulator and a real phone.
-Still to come: retire and remove, once this cooling-off ends (release at block 65,923,200, about 13:14 UTC on 3 Nov).
-All wallets above are our own test wallets.
+That is the whole cycle, including the way out: Kuza had worked out the release at block 65,923,200, the retire went
+through at 65,924,317, and after the two approvals the staker shows 1,100 NIM active, 0 inactive and 0 retired. Also
+on mainnet: connecting, the safety warning on an invite link, the live cooling-off, the gift counted toward the goal,
+and goals surviving a close and reopen. Before that, every flow ran on testnet, on an emulator and a real phone.
+
+Not tested yet: an iPhone, and rewards (Earned still shows +0, no reward has reached the stake yet). All wallets above
+are our own test wallets; we know of no outside user yet.
 
 ## How the unstaking wait is worked out
 
@@ -68,7 +74,7 @@ in [`docs/js/staking.js`](docs/js/staking.js), with its sources listed at the to
 ## Layout
 
 ```
-docs/          the site, served by GitHub Pages as is. No build step.
+docs/          the site, served as static files on Cloudflare Workers. No build step.
   js/app.js    screens and flows
   js/staking.js, goals.js, jar.js, nim.js   pure logic, unit tested
   js/chain.js  read-only JSON-RPC
