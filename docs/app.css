@@ -200,3 +200,15 @@ input:focus, select:focus { border-color: var(--gold); }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 @media (max-width: 340px) { .hero-row { gap: 10px; } .hero-v { font-size: 13px; } .amount.big .num { font-size: 28px; } }
+
+/* Static copy for readers without JavaScript; index.html shows it from a <noscript> style, the app removes it. */
+.nojs { display: none; }
+.nojs-sec { display: flex; flex-direction: column; gap: 8px; }
+.nojs-sec ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.nojs-sec a { overflow-wrap: anywhere; }
+.nojs-tx { width: 100%; border-collapse: collapse; font-size: 13px; }
+.nojs-tx th, .nojs-tx td { text-align: left; vertical-align: top; padding: 6px 4px; border-top: 1px solid var(--line); }
+.nojs-tx th { font-size: 12px; font-weight: 600; color: var(--mute); border-top: 0; }
+.nojs-tx td:nth-child(2) { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+.nojs-tx td:last-child { white-space: nowrap; }
+.nojs-tx td:nth-child(2) a { overflow-wrap: normal; white-space: nowrap; }

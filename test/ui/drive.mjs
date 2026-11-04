@@ -8,8 +8,9 @@ import { extname, join, resolve } from 'node:path';
 
 const OUT = resolve(process.argv[2] || 'tmp-ui');
 const ROOT = resolve(new URL('../../docs', import.meta.url).pathname);
-const PORT = 8123;
-const CDP = 9333;
+// Ports can be moved when another tool holds the defaults: KUZA_UI_PORT=8124 KUZA_UI_CDP=9334 node test/ui/drive.mjs out
+const PORT = Number(process.env.KUZA_UI_PORT) || 8123;
+const CDP = Number(process.env.KUZA_UI_CDP) || 9333;
 const PROFILE = `${OUT}/profile`;
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
@@ -92,6 +93,9 @@ async function newTab(width = 390, height = 844) {
 async function main() {
   await rm(OUT, { recursive: true, force: true });
   await mkdir(OUT, { recursive: true });
+  // Never drive a browser this script didn't start: refuse if something already answers on the debug port.
+  const busy = await fetch(`http://127.0.0.1:${CDP}/json/version`).then(() => true, () => false);
+  if (busy) { console.log(`FAIL port ${CDP} is already in use by another browser; set KUZA_UI_CDP`); process.exit(2); }
   await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
   const chrome = spawn('google-chrome', ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=${PROFILE}`, '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--disable-extensions', '--mute-audio', 'about:blank'], { stdio: 'ignore' });
   try {
@@ -105,6 +109,7 @@ async function main() {
     await t.go(base);
     await t.waitText('Open in Nimiq Pay');
     check('outside: landing shows', true);
+    check('outside: static copy removed once the app runs', await t.eval(`document.getElementById('nojs') === null`));
     await t.shot(`${OUT}/00-outside.png`);
 
     // First run.
@@ -372,6 +377,22 @@ async function main() {
     await t.click('[data-rig=demo-yes]');
     await t.waitText('Don\'t send it again');
     check('jar: unknown outcome keeps the button off', await t.eval(`document.querySelector('[data-rig=j-send]').disabled`));
+
+    // Without JavaScript: the static copy shows and the boot mark doesn't.
+    const n = await newTab();
+    await n.call('Emulation.setScriptExecutionDisabled', { value: true });
+    await n.go(base);
+    const nText = await n.text();
+    check('no JS: static copy is visible', nText.includes('Open it in Nimiq Pay') && nText.includes('Mainnet record') && nText.includes('Honest limits'));
+    check('no JS: seven mainnet transaction links', await n.eval(`document.querySelectorAll('.nojs-tx a[href^="https://nimiq.watch/#"]').length === 7`));
+    check('no JS: boot mark hidden', await n.eval(`getComputedStyle(document.querySelector('.boot')).display === 'none'`));
+    check('no JS: no horizontal scroll', await n.noHScroll());
+    await n.shot(`${OUT}/15-nojs.png`);
+    const n2 = await newTab(320, 640);
+    await n2.call('Emulation.setScriptExecutionDisabled', { value: true });
+    await n2.go(base);
+    check('no JS 320 px: no horizontal scroll', await n2.noHScroll());
+    await n2.shot(`${OUT}/16-nojs-small.png`);
 
     // Small phone.
     const s = await newTab(320, 640);

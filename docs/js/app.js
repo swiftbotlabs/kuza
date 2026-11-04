@@ -1263,6 +1263,7 @@ function fatal() {
 }
 
 async function boot() {
+  document.getElementById('nojs')?.remove(); // the static copy for readers without JavaScript
   if (DEMO) {
     const mock = await import('./mock.js');
     mock.install();
