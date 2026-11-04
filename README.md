@@ -56,8 +56,31 @@ through at 65,924,317, and after the two approvals the staker shows 1,100 NIM ac
 on mainnet: connecting, the safety warning on an invite link, the live cooling-off, the gift counted toward the goal,
 and goals surviving a close and reopen. Before that, every flow ran on testnet, on an emulator and a real phone.
 
-Not tested yet: an iPhone, and rewards (Earned still shows +0, no reward has reached the stake yet). All wallets above
-are our own test wallets; we know of no outside user yet.
+Not tested yet: an iPhone, and rewards. Earned still shows +0 because no reward has reached the stake yet: the pool adds
+rewards to a stake only once they reach 1 NIM, and at 1,100 NIM that takes about six and a half days. The pool's own
+figures showed 0.495 NIM built up on 4 November, so the first reward is due around 8 November. All wallets above are
+our own test wallets; we know of no outside user yet.
+
+## Who has used it
+
+Kuza counts each wallet once, when it connects on mainnet. Only a keyed hash is stored, so the count can't say whose
+wallets they are. The live number: https://kuza-api.swiftbotlab.workers.dev/v1/stats
+
+On 4 November 2026 it read **5 wallets**:
+
+- **2 are ours:** the test wallet `NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM` on the first phone, which made every
+  goal transaction above, and `NQ04 HH5C HSLU VHGD EP4G BA1R 1MGB PT0X EY9V` on the second phone, counted when it sent
+  the gift.
+- **The other 3:** we can't tell whose they are. Some may be our own earlier test sessions, so we don't count any of
+  them as outside users.
+
+Outside wallets with a transaction made through Kuza:
+
+| Wallet | What it did | Transaction |
+|---|---|---|
+| none known yet | | |
+
+If you've saved with Kuza and are happy to be listed here, open an issue with the transaction link.
 
 ## How the unstaking wait is worked out
 
