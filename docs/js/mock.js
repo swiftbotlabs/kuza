@@ -52,7 +52,11 @@ const fail = (message) => Object.assign(new Error(message), { type: 'INTERNAL_ER
 const provider = {
   isConsensusEstablished: async () => true,
   getBlockNumber: async () => chain.height,
-  getBalance: async () => chain.wallet,
+  getBalance: async () => {
+    // A test can make the read fail, as a slow or broken wallet would.
+    if (chain.balanceFails) throw new Error('Request timed out');
+    return chain.wallet;
+  },
   listAccounts: async () => {
     // Opening someone's invite link means being the friend, so the pretend wallet changes hands.
     const me = location.search.includes('jar=') ? FRIEND : ME;

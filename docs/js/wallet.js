@@ -37,12 +37,14 @@ export function errorHash(err) {
  * The first account is the permanent identity: it owns the stake and receives money, which the wallet
  * then moves across. So `spendable` is what a transaction can use right now, and `total` is everything.
  */
-export async function walletBalances(accounts) {
-  const parts = await Promise.all(accounts.map((a) => provider.getBalance(a).catch(() => null)));
-  const known = parts.filter((p) => typeof p === 'number');
-  if (!known.length) return { total: null, spendable: null };
+export async function walletBalances(accounts, from = provider) {
+  const read = (a) => Promise.resolve().then(() => from.getBalance(a)).then((n) => (Number.isSafeInteger(n) && n >= 0 ? n : null), () => null);
+  const parts = await Promise.all(accounts.map(read));
+  const known = parts.filter((p) => p !== null);
+  // complete: every account answered. A failed or timed-out read is unknown, never 0.
+  if (!known.length) return { total: null, spendable: null, complete: false };
   const payer = parts.length > 1 ? parts[1] : parts[0];
-  return { total: known.reduce((x, y) => x + y, 0), spendable: typeof payer === 'number' ? payer : null };
+  return { total: known.reduce((x, y) => x + y, 0), spendable: payer, complete: known.length === parts.length };
 }
 
 export const hostLanguage = () => window.nimiqPay?.language || window.__NIMIQ_PAY__?.lang || null;

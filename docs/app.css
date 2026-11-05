@@ -87,6 +87,10 @@ main { display: flex; flex-direction: column; gap: 12px; }
 .notice-i { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: #ecebf6; color: var(--ink-2); flex: none; }
 .card.notice.gold .notice-i { background: var(--gold-soft); color: #a86a00; }
 .card.notice.good .notice-i { background: var(--green-soft); color: var(--green); }
+.card.notice .grow { min-width: 0; }
+.card.notice.nudge:active { transform: scale(.99); }
+.nudge-cta { margin-top: 3px; }
+.notice-go { flex: none; display: grid; place-items: center; color: var(--mute); }
 
 .hex { position: relative; flex: none; }
 .hex svg { display: block; }

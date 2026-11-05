@@ -8,6 +8,7 @@ import * as J from './jar.js';
 import * as C from './chain.js';
 import * as W from './wallet.js';
 import * as A from './api.js';
+import * as N from './nudge.js';
 import { h, icon, hexRing, logo, openSheet, closeSheet, sheetOpen, toast, copyText, GOAL_ICONS } from './ui.js';
 import { t, tn, setLang, pickLang, LANGS, lang } from './i18n.js';
 
@@ -19,7 +20,7 @@ const HOUR = 3600e3;
 const TX_WINDOW = 2.5 * HOUR; // a transaction not mined after its validity window never will be
 
 const R = {
-  network: 'mainnet', fiat: null, accounts: [], fresh: false, height: null, staker: undefined, wallet: null, spendable: null,
+  network: 'mainnet', fiat: null, accounts: [], fresh: false, height: null, staker: undefined, wallet: null, spendable: null, walletComplete: false,
   validators: [], market: null, stats: null, online: true, syncedAt: 0, syncing: false, jar: null, jail: 0, gifts: null,
 };
 let st = G.sanitizeState(null);
@@ -236,9 +237,22 @@ async function connect() {
 }
 
 async function readWallet() {
-  const { total, spendable } = await W.walletBalances(R.accounts);
+  const { total, spendable, complete } = await W.walletBalances(R.accounts);
   R.wallet = total;
   R.spendable = spendable;
+  R.walletComplete = complete;
+}
+
+/** Once money may have moved, the old balance can be wrong: unknown until it's read again. */
+function forgetWallet() {
+  R.wallet = null;
+  R.spendable = null;
+  R.walletComplete = false;
+}
+
+async function rereadWallet() {
+  forgetWallet();
+  if (R.fresh) await readWallet().catch(() => {});
 }
 
 async function ensureFresh() {
@@ -271,6 +285,7 @@ function walletFailure(err) {
 
 async function settle(hash, goal) {
   const tx = await C.waitForTx(hash);
+  await rereadWallet();
   await sync();
   if (!tx) {
     toast(t('toast.slow'), 'info', 6000);
@@ -338,6 +353,7 @@ async function stakeFor(goal, value, fromWallet, wanted, pool) {
     if (kind === 'unknown' || kind === 'network') {
       entry.hash = W.errorHash(err);
       goal.entries.push(entry); // settled against the chain on the next sync; never send twice
+      forgetWallet();
       saveState();
       closeSheet(true);
       render();
@@ -440,6 +456,7 @@ async function remove(amount) {
   saveState();
   render();
   const tx = await C.waitForTx(hash);
+  await rereadWallet();
   await sync();
   if (!tx) return toast(t('toast.slow'), 'info', 6000);
   if (tx.executionResult === false) return toast(t('err.failedTx'), 'bad', 6000);
@@ -478,6 +495,7 @@ async function runRelease() {
   } catch (err) {
     if (err?.step) toast(t('err.failedTx'), 'bad', 6000);
     else {
+      if (kind === 'remove') forgetWallet();
       noteUnknown(err, kind);
       walletFailure(err);
     }
@@ -564,7 +582,7 @@ function dueCards() {
 
 function summaryCard() {
   const staked = R.staker?.total ?? 0;
-  const inWallet = openGoals().reduce((sum, g) => sum + G.parts(g).wallet, 0);
+  const inWallet = notedInWallet();
   const pool = poolOf(R.staker?.delegation);
   const rate = rateText(pool?.fee ?? 0.05);
   return h('section', { class: 'hero' },
@@ -575,6 +593,24 @@ function summaryCard() {
       h('div', {}, h('div', { class: 'hero-k' }, t('home.inWallet')), h('div', { class: 'hero-v' }, nim(inWallet))),
       rate ? h('div', {}, h('div', { class: 'hero-k' }, t('home.rate')), h('div', { class: 'hero-v' }, `~${rate}`)) : null),
     pool ? h('div', { class: 'hero-foot' }, t('home.pool', { name: pool.name })) : null);
+}
+
+const notedInWallet = () => openGoals().reduce((sum, g) => sum + G.parts(g).wallet, 0);
+
+/** NIM in the wallet that could go toward a goal. Shown only from a balance read in this session, never a guessed 0. */
+function walletCard() {
+  const nudge = N.walletNudge({ spendable: R.spendable, noted: notedInWallet(), staker: R.staker, pending: hasPending() });
+  if (!nudge) return null;
+  const goals = openGoals();
+  const target = goals.find((g) => goalProgress(g).left > 0) || null;
+  const cta = target ? t('save.title', { name: target.name }) : goals.length ? t('home.new') : t('home.first');
+  return h('button', { class: 'card notice gold nudge', 'data-rig': 'wallet-nudge', onclick: () => (target ? sheetSave(target, { suggest: true }) : sheetGoal()) },
+    h('div', { class: 'notice-i' }, icon('seed')),
+    h('div', { class: 'grow' },
+      h('b', {}, nudge.more ? t('nudge.titleFree', { amount: nim(nudge.amount) }) : t('nudge.title', { amount: nim(nudge.amount) })),
+      h('div', { class: 'small mute' }, nudge.canStake ? t('nudge.ready') : t('nudge.under')),
+      h('div', { class: 'small link-ish nudge-cta' }, cta)),
+    h('span', { class: 'notice-go' }, icon('next', 18)));
 }
 
 function goalCard(goal) {
@@ -637,6 +673,7 @@ function viewHome() {
   const goals = openGoals();
   const body = h('main', {},
     summaryCard(),
+    walletCard(),
     coolingCard(),
     dueCards(),
     h('div', { class: 'row-between' },
@@ -812,7 +849,7 @@ function sheetDelete(goal) {
 
 const hasPending = () => Boolean(st.op) || st.goals.some((g) => g.entries.some((e) => e.status === 'pending'));
 
-async function sheetSave(goal, { includeWallet = false, first = false, typed: keep = null } = {}) {
+async function sheetSave(goal, { includeWallet = false, first = false, suggest = false, typed: keep = null } = {}) {
   if (hasPending()) {
     sync();
     toast(t('wd.waitOp'));
@@ -824,7 +861,13 @@ async function sheetSave(goal, { includeWallet = false, first = false, typed: ke
   const prog = goalProgress(goal);
   const due = G.dueNow(goal, Date.now());
   const preset = includeWallet ? 0 : (due?.left ?? 0);
-  const amount = h('input', { type: 'text', inputmode: 'decimal', value: keep ?? (preset ? String(Math.ceil(preset / LUNA)) : ''), placeholder: '0', autocomplete: 'off', 'data-rig': 's-amount' });
+  // Nothing staked yet: fill in what the wallet can spare, as a suggestion the user edits. Never more than the balance.
+  const suggested = (first || suggest) && !includeWallet && keep === null
+    ? N.firstSuggestion({ spendable: R.spendable, noted: notedInWallet(), staker: R.staker, left: prog.left })
+    : 0;
+  const start = keep ?? (suggested ? plainNim(suggested) : preset ? String(Math.ceil(preset / LUNA)) : '');
+  const amount = h('input', { type: 'text', inputmode: 'decimal', value: start, placeholder: '0', autocomplete: 'off', 'data-rig': 's-amount' });
+  const suggestNote = suggested ? h('p', { class: 'tiny mute', 'data-rig': 's-suggested' }, t('save.suggested', { amount: nim(R.spendable) })) : null;
   const info = h('div', { class: 'route' });
   const fiatLine = h('p', { class: 'tiny mute' });
   const btn = h('button', { class: 'btn primary wide', 'data-rig': 's-submit' }, t('save.go'));
@@ -839,7 +882,7 @@ async function sheetSave(goal, { includeWallet = false, first = false, typed: ke
     const route = value ? S.saveRoute(value, R.staker) : { route: 'invalid' };
     const staked = route.route === 'new' || route.route === 'add';
     const newMoney = typed || 0;
-    const noted = openGoals().reduce((sum, g) => sum + G.parts(g).wallet, 0);
+    const noted = notedInWallet();
     const tooMuch = R.spendable !== null && staked && value > R.spendable;
     plan = { value, part, route: route.route };
     fiatLine.textContent = value && fiat(value) ? `≈ ${fiat(value)}` : '';
@@ -866,8 +909,9 @@ async function sheetSave(goal, { includeWallet = false, first = false, typed: ke
     }
     if (tooMuch) kids.push(h('p', { class: 'tiny bad' }, t('save.tooMuch', { amount: nim(R.spendable) })));
     if (tooMuch && R.wallet > R.spendable) kids.push(h('p', { class: 'tiny mute' }, t('save.arriving', { amount: nim(R.wallet - R.spendable) })));
-    if (R.wallet === 0) kids.push(h('p', { class: 'tiny warn' }, t('save.empty')));
-    else if (route.route === 'aside' && R.wallet !== null && newMoney + noted > R.wallet) kids.push(h('p', { class: 'tiny warn' }, t('save.asideOver', { amount: nim(R.wallet) })));
+    if (suggestNote) suggestNote.hidden = amount.value !== start;
+    if (R.wallet === 0 && R.walletComplete) kids.push(h('p', { class: 'tiny warn' }, t('save.empty')));
+    else if (route.route === 'aside' && R.walletComplete && newMoney + noted > R.wallet) kids.push(h('p', { class: 'tiny warn' }, t('save.asideOver', { amount: nim(R.wallet) })));
     info.replaceChildren(...kids);
     btn.disabled = !value || route.route === 'invalid' || tooMuch || (route.route === 'new' && !pool);
     btn.textContent = route.route === 'aside' ? t('save.goAside', { amount: nim(newMoney, 5) }) : staked ? t('save.goStake', { amount: nim(value, 5) }) : t('save.go');
@@ -905,6 +949,7 @@ async function sheetSave(goal, { includeWallet = false, first = false, typed: ke
   openSheet(t('save.title', { name: goal.name }), h('div', { class: 'form' },
     first ? h('p', { class: 'small good' }, t('save.first')) : null,
     field(t('save.amount'), amount),
+    suggestNote,
     fiatLine,
     h('div', { class: 'quick' }, chips.map(([label, luna]) => h('button', { type: 'button', class: 'chip-btn', onclick: () => { amount.value = String(Math.ceil(luna / LUNA)); render2(); } }, label))),
     walletToggle,

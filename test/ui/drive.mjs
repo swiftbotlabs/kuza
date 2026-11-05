@@ -132,6 +132,16 @@ async function main() {
     await t.shot(`${OUT}/02-home-empty.png`);
     check('home after connect', true);
 
+    // The wallet line: the pretend wallet's balance, right under the stake card, with the goal button.
+    await t.waitText('25,000 NIM in your wallet');
+    check('wallet line: pretend balance under the stake card', await t.eval(`(() => { const n = document.querySelector('[data-rig=wallet-nudge]'); return !!n && document.querySelector('.hero').nextElementSibling === n && n.innerText.includes('Ready to stake toward a goal') && n.innerText.includes('Create your first goal'); })()`));
+    check('wallet line: no horizontal scroll', await t.noHScroll());
+    await t.click('[data-rig=wallet-nudge]');
+    await t.waitText('Create goal');
+    check('wallet line: opens the new goal form', await t.eval(`!!document.querySelector('[data-rig=f-name]')`));
+    await t.click('[data-rig=sheet-close]');
+    await sleep(300);
+
     // New goal: bad input first.
     await t.click('[data-rig=new-goal]');
     await t.fill('[data-rig=f-name]', '');
@@ -149,10 +159,15 @@ async function main() {
     await t.fill('[data-rig=f-weekly]', '50');
     await t.click('[data-rig=f-submit]');
     await t.waitText('Make your first saving');
+    // Nothing staked yet: the amount is filled in from the wallet, capped by the goal (5,000 of 25,000 NIM).
+    check('first saving: suggestion filled in, capped by the goal', (await t.eval(`document.querySelector('[data-rig=s-amount]').value`)) === '5000');
+    check('first saving: says it is a suggestion', await t.eval(`(() => { const n = document.querySelector('[data-rig=s-suggested]'); return !!n && !n.hidden && n.innerText.includes('Suggested from the 25,000 NIM'); })()`));
+    await t.shot(`${OUT}/03b-first-suggested.png`);
 
     // Under the minimum: stays in the wallet.
     await t.fill('[data-rig=s-amount]', '60');
     await t.waitText('under the network');
+    check('first saving: suggestion note hides once the user edits', await t.eval(`document.querySelector('[data-rig=s-suggested]').hidden`));
     await t.shot(`${OUT}/04-save-aside.png`);
     await t.click('[data-rig=s-submit]');
     await t.waitText('stays in your wallet');
@@ -187,6 +202,13 @@ async function main() {
     const staker = await t.eval('window.__kuzaDemo.chain.staker');
     check('stake: 160 NIM reached the (pretend) staker', staker && staker.balance >= 160e5);
     await t.shot(`${OUT}/06-goal.png`);
+    // After a stake the line shows the new balance, never the one from before the send.
+    const goalHash = await t.eval('location.hash');
+    await t.eval('location.hash = "#/"');
+    await t.waitText('24,840 NIM in your wallet');
+    check('wallet line: re-read after the stake (24,840, not 25,000)', !(await t.text()).includes('25,000 NIM in your wallet') && (await t.eval(`document.querySelector('[data-rig=wallet-nudge]').innerText.includes('Add to New motorbike')`)));
+    await t.eval(`location.hash = ${JSON.stringify(goalHash)}`);
+    await sleep(300);
 
     // Unknown outcome: recorded as pending, never retried, settled from the chain.
     await t.openSave();
@@ -331,6 +353,39 @@ async function main() {
     await t.waitText('New motorbike');
     check('reload: goal survives in storage', true);
 
+    // The wallet line never guesses. After a reload the balance hasn't been read in this session: no line.
+    const nudgeShown = () => t.eval(`!!document.querySelector('[data-rig=wallet-nudge]')`);
+    check('reload: no wallet line before the wallet is read', !(await nudgeShown()));
+    const homeAfterSheet = async () => {
+      await t.click('[data-rig=sheet-close]');
+      await t.eval('location.hash = "#/"');
+      await sleep(400);
+    };
+    await t.eval(`document.querySelector('.card.goal')?.click()`);
+    await sleep(300);
+    await t.openSave();
+    await homeAfterSheet();
+    check('wallet line: back once the wallet is read', await nudgeShown());
+    // A read that fails or times out: nothing new on screen, and never "empty".
+    await t.eval('window.__kuzaDemo.chain.balanceFails = true');
+    await t.eval(`document.querySelector('.card.goal')?.click()`);
+    await sleep(300);
+    await t.openSave();
+    const failedText = await t.text();
+    check('failed read: sheet shows no balance and no "empty"', !failedText.includes('In your wallet:') && !failedText.includes('wallet is empty'));
+    await homeAfterSheet();
+    check('failed read: no wallet line', !(await nudgeShown()));
+    await t.shot(`${OUT}/10c-read-failed.png`);
+    // A real 0: no line, and the sheet may say the wallet is empty because every account answered.
+    await t.eval('window.__kuzaDemo.chain.balanceFails = false; window.__kuzaDemo.chain.wallet = 0');
+    await t.eval(`document.querySelector('.card.goal')?.click()`);
+    await sleep(300);
+    await t.openSave();
+    check('balance 0: sheet says the wallet is empty', (await t.text()).includes('wallet is empty'));
+    await homeAfterSheet();
+    check('balance 0: no wallet line', !(await nudgeShown()));
+    await t.eval('window.__kuzaDemo.chain.wallet = 25000e5');
+
     // How it works, languages, overflow in each.
     for (const code of ['en', 'es', 'fr', 'sw']) {
       await t.go(`${base}?demo=1&lang=${code}`);
@@ -401,8 +456,22 @@ async function main() {
     check('320 px: no horizontal scroll', await s.noHScroll());
     await s.shot(`${OUT}/14-small.png`);
 
-    check('no script errors', t.errors.length === 0 && s.errors.length === 0);
-    if (t.errors.length || s.errors.length) console.log([...t.errors, ...s.errors].slice(0, 8).join('\n'));
+    // The wallet line at 360 px, in the longest language, on a fresh pretend wallet.
+    const m = await newTab(360, 740);
+    await m.go(`${base}?demo=1&lang=fr`);
+    await m.eval('localStorage.clear()');
+    await m.go(`${base}?demo=1&lang=fr`);
+    await sleep(500);
+    await m.click('[data-rig=connect]');
+    await m.waitText('Pretend wallet');
+    await m.click('[data-rig=demo-yes]');
+    await m.waitText('dans votre portefeuille');
+    check('360 px: wallet line shown, no horizontal scroll', (await m.eval(`!!document.querySelector('[data-rig=wallet-nudge]')`)) && (await m.noHScroll()));
+    check('360 px: wallet line fits inside the card', await m.eval(`(() => { const n = document.querySelector('[data-rig=wallet-nudge]'); return n.scrollWidth <= n.clientWidth + 1; })()`));
+    await m.shot(`${OUT}/17-wallet-line-360-fr.png`);
+
+    check('no script errors', t.errors.length === 0 && s.errors.length === 0 && m.errors.length === 0);
+    if (t.errors.length || s.errors.length || m.errors.length) console.log([...t.errors, ...s.errors, ...m.errors].slice(0, 8).join('\n'));
   } catch (err) {
     console.log('FAIL', err.message);
     checks.push(['run', false]);

@@ -21,6 +21,8 @@ page with a demo that uses pretend NIM.)
 - **Goals:** a name, a target, a date and a weekly plan.
 - **Saving:** a staking transaction that you approve. Under the network's 100 NIM minimum for a new stake, the goal
   fills in your wallet instead and tells you how far you are from being able to stake.
+- **Starting:** NIM already in your wallet shows under your stake, and the first saving fills in what you can
+  spare (a little is kept for fees). You can change it before you approve.
 - **Progress:** your stake and what it earned are read from the chain. Streaks, set-aside notes and how stake is split
   between goals are kept on your phone. There's a weekly reminder in the app.
 - **Breaking a goal:** shows the real unstaking path and the real wait, with live block numbers.
@@ -99,7 +101,7 @@ in [`docs/js/staking.js`](docs/js/staking.js), with its sources listed at the to
 ```
 docs/          the site, served as static files on Cloudflare Workers. No build step.
   js/app.js    screens and flows
-  js/staking.js, goals.js, jar.js, nim.js   pure logic, unit tested
+  js/staking.js, goals.js, jar.js, nim.js, nudge.js   pure logic, unit tested
   js/chain.js  read-only JSON-RPC
   js/wallet.js the Nimiq Pay provider
   js/mock.js   pretend wallet and chain for ?demo=1
