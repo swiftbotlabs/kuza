@@ -82,6 +82,7 @@ let onSheetClose = null;
 export function openSheet(title, body, { onClose, sub } = {}) {
   closeSheet(true);
   const root = document.getElementById('sheet');
+  root.replaceChildren(); // a sheet still on its way out goes at once, so two never stack
   const panel = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
     h('div', { class: 'sheet-head' },
       h('div', {}, h('h2', {}, title), sub ? h('p', { class: 'mute small' }, sub) : null),
@@ -95,9 +96,30 @@ export function openSheet(title, body, { onClose, sub } = {}) {
   return panel;
 }
 
+// Exits are quicker than entrances: the sheet sinks and the shade fades in about 140 ms.
+// The state changes at once (sheetOpen() is false, the callback runs, the page takes taps),
+// so nothing waits on the animation. closeSheet(true) is used when the app moves on by itself
+// (a save went through, a sheet is replaced) and stays instant.
+const EXIT_MS = 160;
+
+function leave(el, done) {
+  let gone = false;
+  const finish = () => { if (gone) return; gone = true; clearTimeout(timer); done(); };
+  const timer = setTimeout(finish, EXIT_MS + 60);
+  el.addEventListener('animationend', (e) => { if (e.target === el) finish(); });
+  el.classList.add('out');
+  if (getComputedStyle(el).animationName === 'none') finish();
+}
+
 export function closeSheet(silent) {
   if (!sheetEl) return;
-  sheetEl.remove();
+  const el = sheetEl;
+  if (silent) el.remove();
+  else {
+    el.inert = true;
+    el.setAttribute('aria-hidden', 'true');
+    leave(el, () => el.remove());
+  }
   sheetEl = null;
   document.body.classList.remove('no-scroll');
   const cb = onSheetClose;
@@ -111,9 +133,10 @@ let toastTimer = null;
 
 export function toast(text, kind = 'info', ms = 3600) {
   const root = document.getElementById('toast');
-  root.replaceChildren(h('div', { class: `toast ${kind}`, role: 'status' }, text));
+  const el = h('div', { class: `toast ${kind}`, role: 'status' }, text);
+  root.replaceChildren(el);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => root.replaceChildren(), ms);
+  toastTimer = setTimeout(() => leave(el, () => el.remove()), ms);
 }
 
 /** Copy text. Clipboard API first, then the old way; tells the caller if either worked. */

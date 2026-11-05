@@ -1281,17 +1281,34 @@ function viewOutside() {
 
 /* ---------- router and boot ---------- */
 
+const VIEW_IN_MS = 200; // matches .view-in in app.css
+
 function render() {
   const el = root();
   const scroll = window.scrollY;
   const hash = location.hash;
   let view;
-  if (R.jar) view = viewJar();
-  else if (!W.inHost() && !DEMO) view = viewOutside();
-  else if (hash === '#/how') view = viewHow();
-  else if (!st.address) view = viewWelcome();
-  else if (hash.startsWith('#/goal/')) view = viewGoal(findGoal(hash.slice(7)));
-  else view = viewHome();
+  let kind; // which screen this is, for the entrance below
+  if (R.jar) { view = viewJar(); kind = 'jar'; }
+  else if (!W.inHost() && !DEMO) { view = viewOutside(); kind = 'outside'; }
+  else if (hash === '#/how') { view = viewHow(); kind = 'how'; }
+  else if (!st.address) { view = viewWelcome(); kind = 'welcome'; }
+  else if (hash.startsWith('#/goal/')) { view = viewGoal(findGoal(hash.slice(7))); kind = hash; }
+  else { view = viewHome(); kind = 'home'; }
+  // Re-renders of the same screen (a sync every 30 s) stay still; a new screen settles in.
+  // The first screen after boot gets no entrance, so the welcome text paints at once.
+  // A sync can re-render right after the change; the new copy picks the entrance up where it was, so it never restarts.
+  if (view instanceof Element) {
+    const now = performance.now();
+    if (el.dataset.view && el.dataset.view !== kind) R.viewAt = now;
+    else if (el.dataset.view !== kind) R.viewAt = null;
+    const into = R.viewAt == null ? Infinity : now - R.viewAt;
+    if (into < VIEW_IN_MS) {
+      view.classList.add('view-in');
+      view.style.animationDelay = `${-Math.round(into)}ms`;
+    }
+  }
+  el.dataset.view = kind;
   el.replaceChildren(view);
   document.documentElement.lang = lang();
   if (el.dataset.hash === hash) window.scrollTo(0, scroll);
@@ -1309,6 +1326,7 @@ function fatal() {
 
 async function boot() {
   document.getElementById('nojs')?.remove(); // the static copy for readers without JavaScript
+  document.addEventListener('touchstart', () => {}, { passive: true }); // lets iOS WebViews show :active pressed states
   if (DEMO) {
     const mock = await import('./mock.js');
     mock.install();
