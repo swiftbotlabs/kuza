@@ -1,4 +1,6 @@
-Google Inc.
+Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces)
+
+fraunces-kz.woff2 is a subset of Fraunces (Latin, opsz 96-144, wght 420-640, SOFT 100, WONK 1).
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
