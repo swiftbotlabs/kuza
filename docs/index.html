@@ -5,15 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1f2348">
 <meta name="color-scheme" content="light">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rpc.nimiqwatch.com https://rpc.testnet.nimiqwatch.com https://kuza-api.swiftbotlab.workers.dev; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-DC+lhaT4XoxpRtB5NKTS6seNWI4wx9e6OpotCz6w/Xk='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rpc.nimiqwatch.com https://rpc.testnet.nimiqwatch.com https://kuza-api.swiftbotlab.workers.dev; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Kuza</title>
-<meta name="description" content="Savings goals in your own NIM stake. Non-custodial, inside Nimiq Pay.">
+<meta name="description" content="Savings goals that grow in your own NIM stake. Non-custodial, inside Nimiq Pay.">
 <meta property="og:title" content="Kuza: savings goals in your own NIM stake">
 <meta property="og:description" content="Set a goal, stake toward it, and let friends chip in. Kuza never holds your NIM.">
 <meta property="og:image" content="https://kuza.swiftbotlab.workers.dev/img/og.png">
 <meta property="og:url" content="https://kuza.swiftbotlab.workers.dev/">
 <meta name="twitter:card" content="summary_large_image">
+<!-- Inside Nimiq Pay (its globals exist from document start), in the demo and on a gift link this marks the page as the app,
+     so the landing page below never paints there and its styles are never fetched. Elsewhere it loads them (site.css) before
+     the first paint. Its hash is in the CSP above. -->
+<script>(function(){var w=window,d=document;if(w.nimiq||w.nimiqPay||w.__NIMIQ_PAY__||/[?&](demo=1(&|$)|jar=)/.test(location.search)){d.documentElement.classList.add('app');return}d.write('<link rel="preload" href="fonts/inter-latin-wght.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="site.css">')})();</script>
 <link rel="icon" href="img/icon.png" type="image/png">
 <!-- Every module the app imports, so the browser fetches them all at once instead of one level of imports per round trip. -->
 <link rel="modulepreload" href="js/app.js">
@@ -30,57 +34,308 @@
 <link rel="modulepreload" href="js/vendor/mini-app-sdk.js">
 <link rel="modulepreload" href="js/vendor/chunk-JZHZSOY3.js">
 <link rel="modulepreload" href="js/mock.js">
+<link rel="modulepreload" href="js/site.js">
 <link rel="stylesheet" href="app.css">
-<noscript><style>#app .boot { display: none; } .nojs { display: block; }</style></noscript>
+<noscript><style>#app .boot { display: none; }</style><link rel="stylesheet" href="site.css"></noscript>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <linearGradient id="kz-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7c948"/><stop offset="1" stop-color="#ec991c"/></linearGradient>
 </defs></svg>
 <div id="app"><div class="boot"><div class="boot-hex"></div></div></div>
-<!-- Static copy for readers without JavaScript (and for tools that read the HTML). The app removes it when it starts. -->
-<div class="page nojs" id="nojs">
-<main class="welcome">
-  <div class="welcome-mark"><svg viewBox="0 0 100 100" width="72" height="72" aria-hidden="true"><path d="M50 4.5a7 7 0 0 1 3.5.9l34.8 20.1a7 7 0 0 1 3.5 6v37a7 7 0 0 1-3.5 6L53.5 94.6a7 7 0 0 1-7 0L11.7 74.5a7 7 0 0 1-3.5-6v-37a7 7 0 0 1 3.5-6L46.5 5.4a7 7 0 0 1 3.5-.9Z" fill="url(#kz-gold)"/><path d="M50 73V50M50 50c0-13 9-21 23-21 0 15-9 21-23 21ZM50 57c0-10-7-16-19-16 0 12 7 16 19 16Z" fill="none" stroke="#1f2348" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-  <h1>Kuza: savings goals in your own NIM stake</h1>
-  <p class="lead">A savings Mini App for Nimiq Pay. You set a goal and your NIM goes into your own stake with a validator pool, so it earns while it waits.</p>
-  <p class="lead">Kuza never holds your NIM: every move is a transaction you approve in Nimiq Pay, and friends can chip in to a goal by link, with a note.</p>
+<!-- The landing page for a normal browser. It is static, so readers without JavaScript (and tools that read the HTML) see all of it.
+     Inside Nimiq Pay, in the demo and on a gift link, the script in <head> hides it before the first paint and the app removes it. -->
+<div class="lp" id="landing">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-seed" viewBox="0 0 24 24"><path d="M12 21v-7M12 14c0-4 3-7 8-7 0 5-3 7-8 7ZM12 16c0-3-2.5-5.5-7-5.5 0 4 2.5 5.5 7 5.5Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></symbol>
+  <symbol id="i-gift" viewBox="0 0 24 24"><path d="M4 10h16v10H4V10ZM2.5 6.5h19V10h-19V6.5ZM12 6.5V20M12 6.5C10.5 3 6.5 3 7 5.5c.3 1 2.5 1 5 1ZM12 6.5c1.5-3.5 5.5-3.5 5-1-.3 1-2.5 1-5 1Z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6l-7-3ZM9 12l2 2 4-4"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M8 2.5h8a2 2 0 0 1 2 2v15a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-15a2 2 0 0 1 2-2ZM11 18.5h2"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><path d="M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1ZM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-hex" viewBox="0 0 100 100"><path d="M50 4.5a7 7 0 0 1 3.5.9l34.8 20.1a7 7 0 0 1 3.5 6v37a7 7 0 0 1-3.5 6L53.5 94.6a7 7 0 0 1-7 0L11.7 74.5a7 7 0 0 1-3.5-6v-37a7 7 0 0 1 3.5-6L46.5 5.4a7 7 0 0 1 3.5-.9Z"/></symbol>
+</defs></svg>
 
-  <section class="card nojs-sec">
-    <h2>Open it in Nimiq Pay</h2>
-    <p>In Nimiq Pay, go to Mini Apps and enter:</p>
-    <code class="mono">kuza.swiftbotlab.workers.dev</code>
-    <p>Or, on a phone with Nimiq Pay installed, open this link: <a href="nimiqpay://miniapp?url=https%3A%2F%2Fkuza.swiftbotlab.workers.dev%2F">nimiqpay://miniapp?url=https%3A%2F%2Fkuza.swiftbotlab.workers.dev%2F</a></p>
-    <p class="small mute">In a normal browser with JavaScript on, this page offers a demo with pretend NIM: <a href="https://kuza.swiftbotlab.workers.dev/?demo=1">kuza.swiftbotlab.workers.dev/?demo=1</a></p>
-  </section>
+<header class="lp-nav">
+  <div class="lp-wrap lp-nav-in">
+    <a class="lp-brand" href="#top" aria-label="Kuza, back to top">
+      <svg viewBox="0 0 100 100" width="28" height="28" aria-hidden="true"><path d="M50 4.5a7 7 0 0 1 3.5.9l34.8 20.1a7 7 0 0 1 3.5 6v37a7 7 0 0 1-3.5 6L53.5 94.6a7 7 0 0 1-7 0L11.7 74.5a7 7 0 0 1-3.5-6v-37a7 7 0 0 1 3.5-6L46.5 5.4a7 7 0 0 1 3.5-.9Z" fill="url(#kz-gold)"/><path d="M50 73V50M50 50c0-13 9-21 23-21 0 15-9 21-23 21ZM50 57c0-10-7-16-19-16 0 12 7 16 19 16Z" fill="none" stroke="#1f2348" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Kuza</span>
+    </a>
+    <nav class="lp-links" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#record">Mainnet record</a>
+      <a href="#custody">Your own stake</a>
+      <a href="#jar">Group jar</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="lp-btn lp-btn-sm lp-btn-ghost" href="https://github.com/swiftbotlabs/kuza">Source</a>
+    <a class="lp-btn lp-btn-sm lp-btn-dark" href="https://kuza.swiftbotlab.workers.dev/?demo=1">Try the demo</a>
+  </div>
+</header>
 
-  <section class="card nojs-sec">
-    <h2>Mainnet record</h2>
-    <p>Run in the real Nimiq Pay app on two Android phones, with real NIM. Each transaction was read back from the chain, last checked on 4 November 2026:</p>
-    <ol class="nojs-tx">
-      <li><span>New stake, 1,000 NIM</span><span class="when">Block 65,870,430, 2 Nov 22:34 UTC</span><a href="https://nimiq.watch/#4154661745fa442c9c4dc3963ca1002de00405d063934b60e3e34e468e5ffc8e">4154661745fa442c9c4dc3963ca1002de00405d063934b60e3e34e468e5ffc8e</a></li>
-      <li><span>Top-up, 60 NIM</span><span class="when">Block 65,870,509, 2 Nov 22:35 UTC</span><a href="https://nimiq.watch/#200eaaef6344b26195f175436e45dfd9f2cc644f27360c0fb44810a99e528e4b">200eaaef6344b26195f175436e45dfd9f2cc644f27360c0fb44810a99e528e4b</a></li>
-      <li><span>Stop earning on the 60 NIM (start of the cooling-off)</span><span class="when">Block 65,870,706, 2 Nov 22:38 UTC</span><a href="https://nimiq.watch/#0b29e3e1a92eb5b8039f81004a6da78cfa0304fe978159d9cc386c2644c9edda">0b29e3e1a92eb5b8039f81004a6da78cfa0304fe978159d9cc386c2644c9edda</a></li>
-      <li><span>A friend's gift from a second phone, 100 NIM with the note "Good luck with the fund"</span><span class="when">Block 65,872,372, 2 Nov 23:06 UTC</span><a href="https://nimiq.watch/#6a449594631de6e0ca7ba6e88409ae82b36c0db66ffa1a93726c3179f6336b50">6a449594631de6e0ca7ba6e88409ae82b36c0db66ffa1a93726c3179f6336b50</a></li>
-      <li><span>The gift moved into the stake, 100 NIM</span><span class="when">Block 65,872,612, 2 Nov 23:10 UTC</span><a href="https://nimiq.watch/#f196139159689150dd50ef37cee031f53bc66e7c16220e7db5fc5351139a9140">f196139159689150dd50ef37cee031f53bc66e7c16220e7db5fc5351139a9140</a></li>
-      <li><span>Retire the released 60 NIM, after the cooling-off</span><span class="when">Block 65,924,317, 3 Nov 13:28 UTC</span><a href="https://nimiq.watch/#0386938fbc602dea0fcfe92332731a8b0d197c5588ba66f30c90fe5a896d3768">0386938fbc602dea0fcfe92332731a8b0d197c5588ba66f30c90fe5a896d3768</a></li>
-      <li><span>Remove: the 60 NIM back to the wallet</span><span class="when">Block 65,924,337, 3 Nov 13:28 UTC</span><a href="https://nimiq.watch/#fbd6cde2ef9834146a0ec0e608cdab924982819549c9658f8e115e0babe58eb2">fbd6cde2ef9834146a0ec0e608cdab924982819549c9658f8e115e0babe58eb2</a></li>
+<main class="lp-main" id="top">
+
+<section class="lp-hero">
+  <div class="lp-wrap lp-hero-grid">
+    <div class="lp-hero-copy">
+      <a class="lp-pill" href="#record"><span class="lp-dot" aria-hidden="true"></span>A Mini App for Nimiq Pay, tested on mainnet<svg class="lp-i" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      <h1>Savings goals that grow in your own NIM&nbsp;stake</h1>
+      <p class="lp-lead">Inside Nimiq Pay, set a goal and stake toward it with a validator pool, so your savings earn while they wait. Friends can chip in with a link. Kuza never holds your NIM: you approve every move in Nimiq Pay.</p>
+      <div class="lp-cta">
+        <a class="lp-btn lp-btn-primary" href="nimiqpay://miniapp?url=https%3A%2F%2Fkuza.swiftbotlab.workers.dev%2F"><svg class="lp-i" aria-hidden="true"><use href="#i-phone"/></svg>Open in Nimiq Pay</a>
+        <a class="lp-btn lp-btn-line" href="https://kuza.swiftbotlab.workers.dev/?demo=1">Try the demo<svg class="lp-i" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
+      <p class="lp-manual">Or in Nimiq Pay, go to Mini Apps and enter <span class="lp-chip-code"><code>kuza.swiftbotlab.workers.dev</code><button class="lp-copy" type="button" data-copy="kuza.swiftbotlab.workers.dev" aria-label="Copy the address" hidden><svg class="lp-i" aria-hidden="true"><use href="#i-copy"/></svg></button></span></p>
+      <ul class="lp-ticks">
+        <li><svg class="lp-i" aria-hidden="true"><use href="#i-check"/></svg>Non-custodial</li>
+        <li><svg class="lp-i" aria-hidden="true"><use href="#i-check"/></svg>No lock-up</li>
+        <li><svg class="lp-i" aria-hidden="true"><use href="#i-check"/></svg>English, Spanish, French, Swahili</li>
+      </ul>
+    </div>
+
+    <div class="lp-hero-visual">
+      <svg class="lp-hex-bg" viewBox="0 0 100 100" aria-hidden="true"><use href="#i-hex"/></svg>
+      <figure class="lp-phone lp-phone-hero">
+        <div class="lp-phone-screen"><img src="img/site/real-home.webp" width="720" height="1490" alt="Kuza home screen in Nimiq Pay: a stake of 1,060 NIM with the Nimiq Marketing Pool and an Emergency fund goal at 2% of 50,000 NIM" loading="lazy" decoding="async"></div>
+        <figcaption>Real screen: Nimiq Pay on Android, mainnet</figcaption>
+      </figure>
+
+      <div class="lp-live" id="live" aria-label="Demo: a goal filling as the stake grows">
+        <div class="lp-live-head">
+          <span class="lp-tag lp-tag-demo">Demo, pretend NIM</span>
+          <button class="lp-replay" type="button" id="replay" aria-label="Play the demo again" hidden><svg class="lp-i" aria-hidden="true"><use href="#i-play"/></svg>Replay</button>
+        </div>
+        <div class="lp-live-main">
+          <div class="lp-ring">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <path class="lp-ring-track" d="M50 4.5a7 7 0 0 1 3.5.9l34.8 20.1a7 7 0 0 1 3.5 6v37a7 7 0 0 1-3.5 6L53.5 94.6a7 7 0 0 1-7 0L11.7 74.5a7 7 0 0 1-3.5-6v-37a7 7 0 0 1 3.5-6L46.5 5.4a7 7 0 0 1 3.5-.9Z"/>
+              <path class="lp-ring-fill" pathLength="100" d="M50 4.5a7 7 0 0 1 3.5.9l34.8 20.1a7 7 0 0 1 3.5 6v37a7 7 0 0 1-3.5 6L53.5 94.6a7 7 0 0 1-7 0L11.7 74.5a7 7 0 0 1-3.5-6v-37a7 7 0 0 1 3.5-6L46.5 5.4a7 7 0 0 1 3.5-.9Z"/>
+            </svg>
+            <span class="lp-steps lp-ring-pct"><span class="s0" data-v="0%" aria-hidden="true"></span><span class="s1" data-v="20%" aria-hidden="true"></span><span class="s2" data-v="27%" aria-hidden="true"></span><span class="s3">37%</span></span>
+          </div>
+          <div>
+            <p class="lp-live-name">New motorbike</p>
+            <p class="lp-live-amt"><span class="lp-steps"><span class="s0" data-v="0" aria-hidden="true"></span><span class="s1" data-v="1,000" aria-hidden="true"></span><span class="s2" data-v="1,350" aria-hidden="true"></span><span class="s3">1,850</span></span> of 5,000 NIM</p>
+            <p class="lp-live-sub">in your own stake</p>
+          </div>
+        </div>
+        <ol class="lp-live-rows">
+          <li class="r1"><span class="lp-live-ic"><svg class="lp-i" aria-hidden="true"><use href="#i-seed"/></svg></span><span>Staked</span><b>+1,000</b></li>
+          <li class="r2"><span class="lp-live-ic"><svg class="lp-i" aria-hidden="true"><use href="#i-plus"/></svg></span><span>Weekly top-up</span><b>+350</b></li>
+          <li class="r3"><span class="lp-live-ic lp-live-ic-gift"><svg class="lp-i" aria-hidden="true"><use href="#i-gift"/></svg></span><span>A friend: “Ride safe!”</span><b>+500</b></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="lp-facts" aria-label="In numbers">
+  <div class="lp-wrap">
+    <dl class="lp-facts-grid">
+      <div><dt>7</dt><dd>mainnet transactions, from the first stake to NIM back in the wallet</dd></div>
+      <div><dt>1,100 NIM</dt><dd>in our test stake after the full cycle, active with a pool</dd></div>
+      <div><dt>12–24 h</dt><dd>the network’s cooling-off when you take NIM out</dd></div>
+      <div><dt>0 NIM</dt><dd>held by Kuza. Money only moves through Nimiq Pay’s approval sheets</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section class="lp-sec" id="how">
+  <div class="lp-wrap">
+    <p class="lp-kicker">How it works</p>
+    <h2>A goal, a stake, and friends who can chip in</h2>
+    <p class="lp-sub">Everything happens inside the Nimiq Pay wallet. There is no account to make.</p>
+    <ol class="lp-steps3">
+      <li class="lp-card lp-step">
+        <div class="lp-shot" style="--pos: 84%"><img src="img/site/demo-goal.webp" width="720" height="1558" alt="The New goal form: name, icon, target in NIM, target date and a weekly plan" loading="lazy" decoding="async"><span class="lp-tag lp-tag-demo">Demo</span></div>
+        <div class="lp-step-text">
+          <span class="lp-num">01</span>
+          <h3>Set a goal</h3>
+          <p>A name, a target, a date and a weekly plan. Kuza suggests the weekly amount and the first saving from what is in your wallet.</p>
+        </div>
+      </li>
+      <li class="lp-card lp-step">
+        <div class="lp-shot" style="--pos: 87%"><img src="img/site/real-save.webp" width="720" height="1490" alt="Adding 1,000 NIM to an Emergency fund goal: the stake goes to the Nimiq Marketing Pool, 0% fee, with a Stake 1,000 NIM button" loading="lazy" decoding="async"><span class="lp-tag lp-tag-real">Real, mainnet</span></div>
+        <div class="lp-step-text">
+          <span class="lp-num">02</span>
+          <h3>Stake toward it</h3>
+          <p>Each saving is a staking transaction you approve, with a validator pool you choose. Under the network’s 100 NIM minimum for a new stake, the goal fills in your wallet instead and tells you how far you are from being able to stake.</p>
+        </div>
+      </li>
+      <li class="lp-card lp-step">
+        <div class="lp-shot" style="--pos: 92%"><img src="img/site/demo-jar.webp" width="720" height="1558" alt="A friend's view of an invite link: the goal, the owner's address, an amount and a note, and a Send 500 NIM button" loading="lazy" decoding="async"><span class="lp-tag lp-tag-demo">Demo</span></div>
+        <div class="lp-step-text">
+          <span class="lp-num">03</span>
+          <h3>Friends chip in</h3>
+          <p>Share an invite link. A friend pays your own address directly, with a note in the transaction, and Kuza counts it toward the goal.</p>
+        </div>
+      </li>
     </ol>
-    <p class="small">That is the whole cycle, including the way out. Kuza had worked out the release at block 65,923,200 and the retire went through at 65,924,317. The stake now holds 1,100 NIM, active with a pool.</p>
-  </section>
+  </div>
+</section>
 
-  <section class="card nojs-sec">
-    <h2>Honest limits</h2>
-    <ul>
-      <li>So far it has been used with our own test wallets. We know of no outside user yet.</li>
-      <li>Tested on Android only, on two real phones. Not yet tested on an iPhone.</li>
-      <li>Rewards: Earned still shows +0. The pool adds rewards to the stake only once they reach 1 NIM, and this stake hasn't reached that yet.</li>
-      <li>Staking isn't a lock. You can start taking NIM out at any time, and the network's cooling-off takes about 12 to 24 hours.</li>
-    </ul>
-  </section>
+<section class="lp-sec lp-sec-alt" id="record">
+  <div class="lp-wrap">
+    <p class="lp-kicker">Mainnet record</p>
+    <h2>The whole cycle, with real NIM, including the way out</h2>
+    <p class="lp-sub">Run in the real Nimiq Pay app on two Android phones, with real NIM. Each transaction was read back from the chain, last checked on 4 November 2026.</p>
 
-  <p class="center small"><a href="https://github.com/swiftbotlabs/kuza">Open source on GitHub (MIT)</a> · <a href="https://youtu.be/zL79duXVY-U">Demo video</a></p>
+    <ol class="lp-ledger">
+      <li class="lp-tx">
+        <span class="lp-tx-n">1</span>
+        <div class="lp-tx-what"><b>New stake, 1,000 NIM</b><span class="lp-tx-kind">Create staker · <span class="lp-ph lp-ph-save">Save</span></span></div>
+        <div class="lp-tx-when">Block 65,870,430<span>2 Nov 22:34 UTC</span></div>
+        <div class="lp-tx-hash"><a href="https://nimiq.watch/#4154661745fa442c9c4dc3963ca1002de00405d063934b60e3e34e468e5ffc8e" title="Open on nimiq.watch">4154661745fa442c9c4dc3963ca1002de00405d063934b60e3e34e468e5ffc8e</a><button class="lp-copy" type="button" data-copy="4154661745fa442c9c4dc3963ca1002de00405d063934b60e3e34e468e5ffc8e" aria-label="Copy the transaction hash" hidden><svg class="lp-i" aria-hidden="true"><use href="#i-copy"/></svg></button><svg class="lp-i lp-tx-out" aria-hidden="true"><use href="#i-out"/></svg></div>
+      </li>
+      <li class="lp-tx">
+        <span class="lp-tx-n">2</span>
+        <div class="lp-tx-what"><b>Top-up, 60 NIM</b><span class="lp-tx-kind">Add stake · <span class="lp-ph lp-ph-save">Save</span></span></div>
+        <div class="lp-tx-when">Block 65,870,509<span>2 Nov 22:35 UTC</span></div>
+        <div class="lp-tx-hash"><a href="https://nimiq.watch/#200eaaef6344b26195f175436e45dfd9f2cc644f27360c0fb44810a99e528e4b" title="Open on nimiq.watch">200eaaef6344b26195f175436e45dfd9f2cc644f27360c0fb44810a99e528e4b</a><button class="lp-copy" type="button" data-copy="200eaaef6344b26195f175436e45dfd9f2cc644f27360c0fb44810a99e528e4b" aria-label="Copy the transaction hash" hidden><svg class="lp-i" aria-hidden="true"><use href="#i-copy"/></svg></button><svg class="lp-i lp-tx-out" aria-hidden="true"><use href="#i-out"/></svg></div>
+      </li>
+      <li class="lp-tx">
+        <span class="lp-tx-n">3</span>
+        <div class="lp-tx-what"><b>Stop earning on the 60 NIM (start of the cooling-off)</b><span class="lp-tx-kind">Set active stake · <span class="lp-ph lp-ph-out">Take out</span></span></div>
+        <div class="lp-tx-when">Block 65,870,706<span>2 Nov 22:38 UTC</span></div>
+        <div class="lp-tx-hash"><a href="https://nimiq.watch/#0b29e3e1a92eb5b8039f81004a6da78cfa0304fe978159d9cc386c2644c9edda" title="Open on nimiq.watch">0b29e3e1a92eb5b8039f81004a6da78cfa0304fe978159d9cc386c2644c9edda</a><button class="lp-copy" type="button" data-copy="0b29e3e1a92eb5b8039f81004a6da78cfa0304fe978159d9cc386c2644c9edda" aria-label="Copy the transaction hash" hidden><svg class="lp-i" aria-hidden="true"><use href="#i-copy"/></svg></button><svg class="lp-i lp-tx-out" aria-hidden="true"><use href="#i-out"/></svg></div>
+      </li>
+      <li class="lp-tx">
+        <span class="lp-tx-n">4</span>
+        <div class="lp-tx-what"><b>A friend’s gift from a second phone, 100 NIM with the note “Good luck with the fund”</b><span class="lp-tx-kind">Transfer with a note · <span class="lp-ph lp-ph-jar">Group jar</span></span></div>
+        <div class="lp-tx-when">Block 65,872,372<span>2 Nov 23:06 UTC</span></div>
+        <div class="lp-tx-hash"><a href="https://nimiq.watch/#6a449594631de6e0ca7ba6e88409ae82b36c0db66ffa1a93726c3179f6336b50" title="Open on nimiq.watch">6a449594631de6e0ca7ba6e88409ae82b36c0db66ffa1a93726c3179f6336b50</a><button class="lp-copy" type="button" data-copy="6a449594631de6e0ca7ba6e88409ae82b36c0db66ffa1a93726c3179f6336b50" aria-label="Copy the transaction hash" hidden><svg class="lp-i" aria-hidden="true"><use href="#i-copy"/></svg></button><svg class="lp-i lp-tx-out" aria-hidden="true"><use href="#i-out"/></svg></div>
+      </li>
+      <li class="lp-tx">
+        <span class="lp-tx-n">5</span>
+        <div class="lp-tx-what"><b>The gift moved into the stake, 100 NIM</b><span class="lp-tx-kind">Add stake · <span class="lp-ph lp-ph-jar">Group jar</span></span></div>
+        <div class="lp-tx-when">Block 65,872,612<span>2 Nov 23:10 UTC</span></div>
+        <div class="lp-tx-hash"><a href="https://nimiq.watch/#f196139159689150dd50ef37cee031f53bc66e7c16220e7db5fc5351139a9140" title="Open on nimiq.watch">f196139159689150dd50ef37cee031f53bc66e7c16220e7db5fc5351139a9140</a><button class="lp-copy" type="button" data-copy="f196139159689150dd50ef37cee031f53bc66e7c16220e7db5fc5351139a9140" aria-label="Copy the transaction hash" hidden><svg class="lp-i" aria-hidden="true"><use href="#i-copy"/></svg></button><svg class="lp-i lp-tx-out" aria-hidden="true"><use href="#i-out"/></svg></div>
+      </li>
+      <li class="lp-tx">
+        <span class="lp-tx-n">6</span>
+        <div class="lp-tx-what"><b>Retire the released 60 NIM, after the cooling-off</b><span class="lp-tx-kind">Retire stake · <span class="lp-ph lp-ph-out">Take out</span></span></div>
+        <div class="lp-tx-when">Block 65,924,317<span>3 Nov 13:28 UTC</span></div>
+        <div class="lp-tx-hash"><a href="https://nimiq.watch/#0386938fbc602dea0fcfe92332731a8b0d197c5588ba66f30c90fe5a896d3768" title="Open on nimiq.watch">0386938fbc602dea0fcfe92332731a8b0d197c5588ba66f30c90fe5a896d3768</a><button class="lp-copy" type="button" data-copy="0386938fbc602dea0fcfe92332731a8b0d197c5588ba66f30c90fe5a896d3768" aria-label="Copy the transaction hash" hidden><svg class="lp-i" aria-hidden="true"><use href="#i-copy"/></svg></button><svg class="lp-i lp-tx-out" aria-hidden="true"><use href="#i-out"/></svg></div>
+      </li>
+      <li class="lp-tx">
+        <span class="lp-tx-n">7</span>
+        <div class="lp-tx-what"><b>Remove: the 60 NIM back to the wallet</b><span class="lp-tx-kind">Remove stake · <span class="lp-ph lp-ph-out">Take out</span></span></div>
+        <div class="lp-tx-when">Block 65,924,337<span>3 Nov 13:28 UTC</span></div>
+        <div class="lp-tx-hash"><a href="https://nimiq.watch/#fbd6cde2ef9834146a0ec0e608cdab924982819549c9658f8e115e0babe58eb2" title="Open on nimiq.watch">fbd6cde2ef9834146a0ec0e608cdab924982819549c9658f8e115e0babe58eb2</a><button class="lp-copy" type="button" data-copy="fbd6cde2ef9834146a0ec0e608cdab924982819549c9658f8e115e0babe58eb2" aria-label="Copy the transaction hash" hidden><svg class="lp-i" aria-hidden="true"><use href="#i-copy"/></svg></button><svg class="lp-i lp-tx-out" aria-hidden="true"><use href="#i-out"/></svg></div>
+      </li>
+    </ol>
+
+    <div class="lp-callout">
+      <svg class="lp-i" aria-hidden="true"><use href="#i-clock"/></svg>
+      <p>That is the whole cycle, including the way out. Kuza had worked out the release at block <b>65,923,200</b> and the retire went through at <b>65,924,317</b>. The stake now holds 1,100 NIM, active with a pool.</p>
+    </div>
+  </div>
+</section>
+
+<section class="lp-sec" id="custody">
+  <div class="lp-wrap lp-split">
+    <div class="lp-split-copy">
+      <p class="lp-kicker">Why your own stake</p>
+      <h2>Your NIM never leaves your hands</h2>
+      <p class="lp-sub">Kuza is a set of goals on top of your own stake. It holds nothing and sends nothing by itself.</p>
+      <ul class="lp-points">
+        <li><span class="lp-pt-ic"><svg class="lp-i" aria-hidden="true"><use href="#i-shield"/></svg></span><div><h3>You approve every move</h3><p>Every saving, top-up and withdrawal is a transaction you approve in Nimiq Pay’s own sheet. The stake belongs to your wallet, with the pool you picked.</p></div></li>
+        <li><span class="lp-pt-ic"><svg class="lp-i" aria-hidden="true"><use href="#i-clock"/></svg></span><div><h3>Never locked</h3><p>Staking isn’t a lock. You can start taking NIM out at any time, and the network’s cooling-off takes about 12 to 24 hours. Kuza shows the real steps and the real wait, with live block numbers.</p></div></li>
+        <li><span class="lp-pt-ic"><svg class="lp-i" aria-hidden="true"><use href="#i-phone"/></svg></span><div><h3>Goals stay on your phone</h3><p>Goals, streaks and notes are kept on your phone. To show a public count of wallets, Kuza sends a hash of your address once, and you can switch that off in settings.</p></div></li>
+      </ul>
+      <p class="lp-fine">The Nimiq provider can’t create vesting contracts, so an enforced time lock isn’t possible from a Mini App. Kuza’s goals work through the cooling-off and your own plan, not through force.</p>
+    </div>
+    <figure class="lp-phone lp-phone-sm">
+      <div class="lp-phone-screen"><img src="img/site/real-cooling.webp" width="720" height="1490" alt="Taking 60 NIM out of an Emergency fund goal: stop earning is done, the cooling-off has about 15 hours left, then two more approvals bring it back to the wallet" loading="lazy" decoding="async"></div>
+      <figcaption>Real screen: taking 60 NIM out on mainnet</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="lp-sec lp-sec-alt" id="jar">
+  <div class="lp-wrap lp-split lp-split-rev">
+    <figure class="lp-phone lp-phone-sm">
+      <div class="lp-phone-screen"><img src="img/site/demo-share.webp" width="720" height="1558" alt="The Invite friends sheet with the invite link and a Copy link button" loading="lazy" decoding="async"></div>
+      <figcaption>Demo screen: the invite link</figcaption>
+    </figure>
+    <div class="lp-split-copy">
+      <p class="lp-kicker">The group jar</p>
+      <h2>Friends add to the goal, straight to your address</h2>
+      <p class="lp-sub">A birthday, a trip, a family fund. Send the invite link and anyone with it can add NIM to the goal.</p>
+      <ul class="lp-points">
+        <li><span class="lp-pt-ic"><svg class="lp-i" aria-hidden="true"><use href="#i-link"/></svg></span><div><h3>One link, no account</h3><p>The gift goes straight to your own address with a public note in the transaction. Kuza never touches it.</p></div></li>
+        <li><span class="lp-pt-ic"><svg class="lp-i" aria-hidden="true"><use href="#i-gift"/></svg></span><div><h3>Counted from the chain</h3><p>Kuza reads the note on-chain and counts the gift toward the goal. Moving it into your stake is one more transaction you approve.</p></div></li>
+      </ul>
+      <a class="lp-receipt" href="https://nimiq.watch/#6a449594631de6e0ca7ba6e88409ae82b36c0db66ffa1a93726c3179f6336b50">
+        <span class="lp-receipt-top"><span class="lp-tag lp-tag-real">Real, mainnet</span><span class="lp-receipt-amt">+100 NIM</span></span>
+        <span class="lp-receipt-note">“Good luck with the fund”</span>
+        <span class="lp-receipt-meta">A friend’s gift from a second phone · Block 65,872,372 · 2 Nov 23:06 UTC</span>
+        <span class="lp-receipt-hash"><code>6a449594631de6e0…26c3179f6336b50</code><span class="lp-receipt-go">View on nimiq.watch</span><svg class="lp-i" aria-hidden="true"><use href="#i-out"/></svg></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="lp-sec" id="faq">
+  <div class="lp-wrap lp-faq-grid">
+    <div>
+      <p class="lp-kicker">Plainly</p>
+      <h2>Honest limits</h2>
+      <ul class="lp-limits">
+        <li>So far it has been used with our own test wallets. We know of no outside user yet.</li>
+        <li>Tested on Android only, on two real phones. Not yet tested on an iPhone.</li>
+        <li>Rewards: Earned still shows +0. The pool adds rewards to the stake only once they reach 1 NIM, and this stake hasn’t reached that yet.</li>
+        <li>Staking isn’t a lock. You can start taking NIM out at any time, and the network’s cooling-off takes about 12 to 24 hours.</li>
+      </ul>
+    </div>
+    <div>
+      <p class="lp-kicker">FAQ</p>
+      <h2>Questions</h2>
+      <div class="lp-faq">
+        <details open><summary>Does Kuza ever hold my NIM?</summary><p>No. Your NIM goes into your own stake with a validator pool, and every move is a transaction you approve in Nimiq Pay. Gifts from friends go straight to your own address.</p></details>
+        <details><summary>Can I take my NIM out before I reach the goal?</summary><p>Yes, at any time. Taking NIM out is three steps: stop earning, the network’s cooling-off of about 12 to 24 hours, then two approvals back to your wallet. If the pool’s validator is jailed, the stake can’t leave until the jail ends, which can add several days.</p></details>
+        <details><summary>What if I have less than 100 NIM?</summary><p>The network asks for at least 100 NIM to start a stake. Below that, the goal fills in your wallet instead and tells you how far you are from being able to stake.</p></details>
+        <details><summary>What does it earn?</summary><p>Your stake earns the pool’s staking rewards. Reward figures are estimates and they change, and the app labels them that way.</p></details>
+        <details><summary>Where are my goals stored?</summary><p>On your phone. Your stake and what it earned are read from the chain. To show a public count of wallets, Kuza sends a hash of your address once, and you can switch that off in settings.</p></details>
+        <details><summary>How do I open it?</summary><p>In Nimiq Pay, go to Mini Apps and enter kuza.swiftbotlab.workers.dev, or open <a href="nimiqpay://miniapp?url=https%3A%2F%2Fkuza.swiftbotlab.workers.dev%2F">nimiqpay://miniapp?url=https%3A%2F%2Fkuza.swiftbotlab.workers.dev%2F</a> on a phone with Nimiq Pay installed. In a normal browser you can <a href="https://kuza.swiftbotlab.workers.dev/?demo=1">try the demo</a> with pretend NIM. It follows the language set in Nimiq Pay: English, Spanish, French or Swahili.</p></details>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="lp-end">
+  <div class="lp-wrap lp-end-in">
+    <div>
+      <h2>Start a goal in Nimiq Pay</h2>
+      <p>Open Mini Apps and enter <code>kuza.swiftbotlab.workers.dev</code>, or try it here first with pretend NIM.</p>
+    </div>
+    <div class="lp-cta">
+      <a class="lp-btn lp-btn-primary" href="nimiqpay://miniapp?url=https%3A%2F%2Fkuza.swiftbotlab.workers.dev%2F"><svg class="lp-i" aria-hidden="true"><use href="#i-phone"/></svg>Open in Nimiq Pay</a>
+      <a class="lp-btn lp-btn-onDark" href="https://kuza.swiftbotlab.workers.dev/?demo=1">Try the demo<svg class="lp-i" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    </div>
+  </div>
+</section>
+
 </main>
+
+<footer class="lp-foot">
+  <div class="lp-wrap lp-foot-in">
+    <p class="lp-brand lp-brand-sm"><svg viewBox="0 0 100 100" width="22" height="22" aria-hidden="true"><path d="M50 4.5a7 7 0 0 1 3.5.9l34.8 20.1a7 7 0 0 1 3.5 6v37a7 7 0 0 1-3.5 6L53.5 94.6a7 7 0 0 1-7 0L11.7 74.5a7 7 0 0 1-3.5-6v-37a7 7 0 0 1 3.5-6L46.5 5.4a7 7 0 0 1 3.5-.9Z" fill="url(#kz-gold)"/><path d="M50 73V50M50 50c0-13 9-21 23-21 0 15-9 21-23 21ZM50 57c0-10-7-16-19-16 0 12 7 16 19 16Z" fill="none" stroke="#1f2348" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kuza</span><span class="lp-foot-mute">means “grow” in Swahili</span></p>
+    <nav class="lp-foot-links" aria-label="More">
+      <a href="https://github.com/swiftbotlabs/kuza">Open source on GitHub (MIT)</a>
+      <a href="https://youtu.be/zL79duXVY-U">Demo video</a>
+      <a href="https://kuza.swiftbotlab.workers.dev/?demo=1">Try the demo</a>
+      <a href="#record">Mainnet record</a>
+    </nav>
+  </div>
+</footer>
 </div>
 <div id="sheet"></div>
 <div id="toast"></div>

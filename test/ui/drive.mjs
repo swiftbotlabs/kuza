@@ -109,12 +109,20 @@ async function main() {
     await t.go(base);
     await t.waitText('Open in Nimiq Pay');
     check('outside: landing shows', true);
-    check('outside: static copy removed once the app runs', await t.eval(`document.getElementById('nojs') === null`));
+    check('outside: the landing page is the page, the app root stays hidden', await t.eval(`getComputedStyle(document.getElementById('landing')).display !== 'none' && getComputedStyle(document.getElementById('app')).display === 'none' && !document.documentElement.classList.contains('app')`));
+    await sleep(300);
+    check('outside: copy buttons and replay switched on by site.js', await t.eval(`document.querySelectorAll('#landing [data-copy]:not([hidden])').length === 8 && !document.getElementById('replay').hidden`));
+    check('outside: no horizontal scroll', await t.noHScroll());
     await t.shot(`${OUT}/00-outside.png`);
+    // A broken gift link in a normal browser falls back to the landing page, not a blank page.
+    await t.go(`${base}?jar=not-a-real-link`);
+    await sleep(500);
+    check('outside: bad gift link shows the landing page', await t.eval(`!!document.getElementById('landing') && getComputedStyle(document.getElementById('landing')).display !== 'none'`));
 
     // First run.
     await t.go(`${base}?demo=1&lang=en`);
     await t.waitText('Save toward something real');
+    check('demo: the landing page is gone and never painted', await t.eval(`document.getElementById('landing') === null && document.documentElement.classList.contains('app') && !performance.getEntriesByType('resource').some((r) => /img\\/site\\/|fonts\\/|site\\.css/.test(r.name))`));
     await t.shot(`${OUT}/01-welcome.png`);
     check('welcome: no horizontal scroll', await t.noHScroll());
 
@@ -438,9 +446,9 @@ async function main() {
     await n.call('Emulation.setScriptExecutionDisabled', { value: true });
     await n.go(base);
     const nText = await n.text();
-    check('no JS: static copy is visible', nText.includes('Open it in Nimiq Pay') && nText.includes('Mainnet record') && nText.includes('Honest limits'));
-    check('no JS: seven mainnet transaction links', await n.eval(`document.querySelectorAll('.nojs-tx a[href^="https://nimiq.watch/#"]').length === 7`));
-    check('no JS: boot mark hidden', await n.eval(`getComputedStyle(document.querySelector('.boot')).display === 'none'`));
+    check('no JS: landing page is visible', nText.includes('Savings goals that grow in your own NIM') && nText.includes('Open in Nimiq Pay') && nText.includes('Mainnet record') && nText.includes('Honest limits'));
+    check('no JS: seven mainnet transaction links', await n.eval(`document.querySelectorAll('.lp-ledger a[href^="https://nimiq.watch/#"]').length === 7`));
+    check('no JS: boot mark hidden', await n.eval(`document.querySelector('.boot').getClientRects().length === 0`));
     check('no JS: no horizontal scroll', await n.noHScroll());
     await n.shot(`${OUT}/15-nojs.png`);
     const n2 = await newTab(320, 640);

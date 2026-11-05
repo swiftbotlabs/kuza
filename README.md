@@ -105,6 +105,7 @@ docs/          the site, served as static files on Cloudflare Workers. No build 
   js/chain.js  read-only JSON-RPC
   js/wallet.js the Nimiq Pay provider
   js/mock.js   pretend wallet and chain for ?demo=1
+  site.css, js/site.js   the landing page in a normal browser (index.html holds its text, so it reads without JavaScript)
   js/vendor/   @nimiq/mini-app-sdk 0.2.4 from npm, unmodified apart from the source map comment
 worker/        optional helper on Cloudflare Workers: wallet count, trimmed pool list, price
 test/          unit tests and a phone-sized run through the demo

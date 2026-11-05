@@ -1265,6 +1265,25 @@ function openInPay(url) {
   return `nimiqpay://miniapp?url=${encodeURIComponent(url)}`;
 }
 
+/** A normal browser shows the static landing page from index.html; the app root stays empty. False if it isn't there. */
+function showLanding() {
+  const page = document.getElementById('landing');
+  if (!page) return false;
+  document.documentElement.classList.remove('app');
+  if (!R.landing) {
+    R.landing = true;
+    root().replaceChildren();
+    import('./site.js').then((m) => m.start(page)).catch(() => {});
+  }
+  return true;
+}
+
+/** Anywhere the app runs, the landing page goes (index.html already hid it before the first paint). */
+function dropLanding() {
+  document.documentElement.classList.add('app');
+  document.getElementById('landing')?.remove();
+}
+
 function viewOutside() {
   return h('div', { class: 'page' },
     h('main', { class: 'welcome' },
@@ -1290,11 +1309,15 @@ function render() {
   let view;
   let kind; // which screen this is, for the entrance below
   if (R.jar) { view = viewJar(); kind = 'jar'; }
-  else if (!W.inHost() && !DEMO) { view = viewOutside(); kind = 'outside'; }
+  else if (!W.inHost() && !DEMO) {
+    if (showLanding()) return;
+    view = viewOutside(); kind = 'outside';
+  }
   else if (hash === '#/how') { view = viewHow(); kind = 'how'; }
   else if (!st.address) { view = viewWelcome(); kind = 'welcome'; }
   else if (hash.startsWith('#/goal/')) { view = viewGoal(findGoal(hash.slice(7))); kind = hash; }
   else { view = viewHome(); kind = 'home'; }
+  dropLanding();
   // Re-renders of the same screen (a sync every 30 s) stay still; a new screen settles in.
   // The first screen after boot gets no entrance, so the welcome text paints at once.
   // A sync can re-render right after the change; the new copy picks the entrance up where it was, so it never restarts.
@@ -1317,6 +1340,7 @@ function render() {
 }
 
 function fatal() {
+  dropLanding();
   root().replaceChildren(h('div', { class: 'page' }, h('main', { class: 'welcome' },
     h('div', { class: 'welcome-mark' }, logo(84)),
     h('h1', {}, t('fatal.title')),
@@ -1325,7 +1349,6 @@ function fatal() {
 }
 
 async function boot() {
-  document.getElementById('nojs')?.remove(); // the static copy for readers without JavaScript
   document.addEventListener('touchstart', () => {}, { passive: true }); // lets iOS WebViews show :active pressed states
   if (DEMO) {
     const mock = await import('./mock.js');
@@ -1348,6 +1371,7 @@ async function boot() {
   st = loadState();
   setLang(st.lang || pickLang(W.hostLanguage() || navigator.language));
   render();
+  if (R.landing) return undefined; // the landing page needs no wallet, chain or helper reads
 
   window.addEventListener('hashchange', render);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
