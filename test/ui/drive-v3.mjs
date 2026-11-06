@@ -288,10 +288,17 @@ async function main() {
 
     // ---------- E. A friend chips in (inside the pretend wallet) ----------
     const v = new URL(link).searchParams.get('j');
+    const { decodeInvite: decodeInv } = await import('../../docs/js/jar.js');
+    const vid = decodeInv(v).id;
     await t.eval('localStorage.clear()');
+    // Two earlier gifts on the pretend chain: one with a normal note, one with a link-like note.
+    await t.eval(`sessionStorage.setItem('kuza.demo.seed', JSON.stringify([{ luna: 500000, memo: 'KZ1|${vid}|Good luck with it' }, { luna: 300000, memo: 'KZ1|${vid}|DM t.me/nimiqhelp' }]))`);
     await t.go(`${base}?demo=1&lang=en&j=${v}`);
     await t.waitText('Add to this goal');
-    check('friend: first-gift line', (await t.text()).includes('Be the first to chip in'));
+    await t.waitText('1 wallet chipped in', 6000);
+    const inApp = await t.text();
+    check('friend view in Nimiq Pay: earlier gifts as amounts only, no notes', inApp.includes('+5 NIM') && inApp.includes('+3 NIM') && !inApp.includes('Good luck with it') && !inApp.includes('t.me'));
+    await t.eval(`sessionStorage.removeItem('kuza.demo.seed')`);
     check('friend: the "only pay if you know who sent this" warning and the full address sit above the amount, not behind a tap', await t.eval(`(() => {
       const o = document.querySelector('[data-rig=j-owner]'); const a = document.querySelector('[data-rig=j-amount]'); const w = document.querySelector('[data-rig=j-trust]');
       return !!o && !!a && !!w && o.getClientRects().length > 0 && w.getClientRects().length > 0 && !o.closest('details') && !w.closest('details')

@@ -21,10 +21,11 @@ below. The wallet's native sheet, which shows the real transaction, is the final
   could still test whether one address has already been counted, which the five-minute cache only makes slower.
 - No IP address, user agent or timestamp finer than a day is stored. A per-caller cap lives in memory only.
 - Invite links carry the goal name, target, date and owner address, which the owner chooses to share.
-- Earned is read from the chain: the history of the wallet address and the payment accounts it funded. One read is
-  capped at 16 requests, 2 pages per account, 12 accounts and 15 seconds; sums for old payment accounts are kept on the
-  phone so they're read once. A read that can't finish shows "not known yet" and is retried after 30 s, then 1, 2, 4
-  minutes and so on, up to 10.
+- Earned is read from the chain: the history of the wallet address and the payment accounts it funded (only valid
+  Nimiq addresses named by the node are followed). The history read is capped at 16 requests, 2 pages per account,
+  12 accounts and 15 seconds, with each request's timeout cut to what's left of the 15; sums for old payment accounts
+  are kept on the phone so they're read once. A read that can't finish shows "not known yet" and is retried after
+  30 s, then 1, 2, 4 minutes and so on, up to 10.
 - The wallet's own account list is kept with the goals, so a reopened app can read the balance (Nimiq Pay's `getBalance`
   needs no approval). It never leaves the phone.
 
@@ -45,9 +46,12 @@ Everything from a link, the chain, the Worker or the RPC node is treated as data
   wallet, which decodes it and asks the user again.
 - On-chain notes are decoded, stripped of control, format and bidi characters and capped. Gifts under 1 NIM, gifts
   from the owner and gifts past 500 per goal are ignored, because a goal id is public once its link is shared.
-- Anyone can publish a note by paying 1 NIM, so a note that reads like a web address is dropped, and the public invite
-  page shows gift amounts only, no notes. Goal names that read like a web address, or have no letter or digit, are
-  refused in the form and in invite links, since a name is shown to everyone the link reaches.
+- Anyone can publish a note by paying 1 NIM, so the pages anyone with an invite link sees (in a browser or inside
+  Nimiq Pay) show gift amounts only; the goal's owner reads notes in their own goal's history. A note, or a goal name,
+  that reads like a way to reach someone is dropped or refused: web addresses in any script (checked on a folded copy:
+  NFKC, invisible and combining marks removed, look-alike dots made plain), bare IP addresses, @handles and Nimiq
+  addresses. Names also need a letter or digit; invisible characters are removed from all text. Test lists: 27 known
+  bypasses refused, 20 real names in the app's languages unchanged (test/security.test.mjs).
 - Pool lists and prices are checked in the page as well as in the Worker.
 - A Content-Security-Policy limits scripts to this origin and network calls to this origin, the two RPC hosts and the
   Worker. Response headers forbid framing (`X-Frame-Options: DENY`, `frame-ancestors 'none'`): Nimiq Pay opens mini
@@ -66,7 +70,8 @@ An invalid transaction can leave the wallet waiting on it, so the page checks ea
 - Lightning payments are made by Nimiq Pay (`payLightningInvoice`). Before the wallet is asked, a SHA-256 of the
   invoice is stored on the phone (the last 50), and an invoice already handed over is refused, across sheets and
   reloads. It is forgotten again only when the user cancelled or the wallet refused the invoice before sending;
-  anything else (paid, duplicate, unknown, network error) may have gone out, so it stays refused.
+  anything else (paid, duplicate, unknown, network error) may have gone out, so it stays refused. The list moves along
+  when the wallet switches accounts.
 - Moving a reached goal's stake to the next goal is bookkeeping on the phone. No transaction is sent.
 
 These checks reduce the risk; they can't rule it out. An outcome the wallet reports as unknown is never retried by the

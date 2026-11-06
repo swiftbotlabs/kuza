@@ -55,3 +55,55 @@ test('stored state: Lightning tries are 64-hex only, last 50; stake sums are who
   assert.deepEqual(G.sanitizeState({ v: 1, stakeCache: [1, 2], lnTried: 'x' }).stakeCache, {});
   assert.deepEqual(G.sanitizeState({ v: 1 }).lnTried, []);
 });
+
+// From the second security read: 27 ways past the first filter, all refused, and real names that must still pass.
+const BYPASS = ['t.me/nimiqhelp', 'x.com/nimiq_support', 'nimiq-gift．com', 'nimiq-gift。com', 'nimiqgift｡com', 'ｗｗｗ．ｅｖｉｌ．ｃｏｍ',
+  'evil͏.com', 'evil️.com', 'evil᠋.com', 'evil឴.com', 'evil\u{E0100}.com', 'https:͏//evil', 'evịl.com',
+  '203.0.113.5/claim', 'nimiq.рф', 'ехаmрlе.соm', 'пример.com', 'a_b.com', 'DM @nimiq_help', 'Send to NQ07 0000 0000 0000',
+  'Free NIM at evil.example', 'www.x.io', 'see https://a', 'claim-now.top fund', 'kuza.app', 'xn--80ak6aa92e.com', 'evil.com'];
+const LEGIT = ['Emergency fund', 'Ada ya shule', 'Trip to St. Lucia', 'Ph.D fees', '学费 2027', 'iPhone 17', 'Happy birthday!',
+  'Good luck with the fund', "Mama's 60th", 'Laptop', 'Nyumba ya mama', 'Viaje a México', 'Café & croissants', 'Rent: Dec.',
+  'v1.0 savings', 'Mom @ home', 'हिन्दी बचत', 'ประหยัด', 'Études', 'Café au lait'];
+
+test('27 known bypasses: refused as a goal name, in both link formats, and dropped as a gift note', () => {
+  assert.equal(BYPASS.length, 27);
+  for (const b of BYPASS) {
+    assert.ok(J.linkish(b), `linkish ${JSON.stringify(b)}`);
+    assert.equal(J.cleanName(b), '', `name ${JSON.stringify(b)}`);
+    assert.equal(J.decodeInvite(J.encodeInvite({ ...GOAL, name: b })), null, `invite ${JSON.stringify(b)}`);
+    assert.equal(J.decodeJar(J.encodeJar({ ...GOAL, name: b })), null, `jar ${JSON.stringify(b)}`);
+    assert.equal(J.parseMemo(hex(J.buildMemo('64ru59', b))).note, '', `note ${JSON.stringify(b)}`);
+  }
+});
+
+test('real names in the app\'s languages pass untouched (the check folds a copy, never the name)', () => {
+  for (const name of LEGIT) {
+    assert.ok(!J.linkish(name), `false positive ${JSON.stringify(name)}`);
+    assert.equal(J.cleanName(name), name, name);
+    assert.equal(J.decodeInvite(J.encodeInvite({ ...GOAL, name })).name, name);
+  }
+  // Invisible marks are removed, not turned into a gap that hides a dot.
+  assert.equal(J.cleanText('evil͏.com', 40), 'evil.com');
+  assert.equal(J.cleanName('ㅤ'), '');
+});
+
+test('switching accounts keeps every Lightning invoice already handed to the wallet', () => {
+  const a = 'a'.repeat(64);
+  const b = 'b'.repeat(64);
+  const prev = G.sanitizeState({ v: 1, address: OWNER, lang: 'sw', noCount: true, lnTried: [a] });
+  const next = G.sanitizeState({ v: 1, address: 'NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5', lnTried: [b], goals: [] });
+  const out = G.carryOver(prev, next);
+  assert.deepEqual(out.lnTried.sort(), [a, b]);
+  assert.equal(out.lang, 'sw');
+  assert.equal(out.noCount, true);
+  assert.equal(out.address, next.address);
+  assert.deepEqual(G.carryOver(prev, G.sanitizeState(null)).lnTried, [a]);
+});
+
+test('the site keeps forbidding framing', async () => {
+  const { readFileSync } = await import('node:fs');
+  const headers = readFileSync(new URL('../docs/_headers', import.meta.url), 'utf8');
+  assert.match(headers, /^\/\*$/m);
+  assert.match(headers, /^\s+X-Frame-Options:\s*DENY\s*$/m);
+  assert.match(headers, /^\s+Content-Security-Policy:\s*frame-ancestors 'none'\s*$/m);
+});

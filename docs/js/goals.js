@@ -270,6 +270,15 @@ function cleanEntry(e) {
   return out;
 }
 
+/**
+ * Switching the wallet's account: the other account's goals come in, but device-wide things come along: the language,
+ * the counting choice, and every Lightning invoice already handed to the wallet (so a switch can't re-send one).
+ */
+export function carryOver(prev, next) {
+  const tried = [...new Set([...(prev?.lnTried || []), ...(next?.lnTried || [])])].slice(-50);
+  return { ...next, lang: prev?.lang ?? null, noCount: prev?.noCount === true, lnTried: tried };
+}
+
 /** Validate a stored state blob; drop anything that doesn't look right. */
 export function sanitizeState(raw) {
   const out = { v: 1, address: null, accounts: [], baseline: null, goals: [], validator: null, seen: false, noCount: false, lang: null, op: null, unstake: null, rewards: null, lnTried: [], stakeCache: {} };

@@ -12,20 +12,30 @@ const NOBODY = new Set([STAKING_CONTRACT, 'NQ07 0000 0000 0000 0000 0000 0000 00
 export function cleanText(input, maxChars) {
   if (typeof input !== 'string') return '';
   // Control, format and bidi characters and blank look-alikes have no place in a name or a public note.
-  const noCtl = input.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u115F\u1160\u2800\u3164\uFFA0]/gu, ' ');
+  // Invisible characters go entirely (a joiner hidden before a dot must not survive as a gap); breaks become spaces.
+  const noCtl = input.replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u115F\u1160\u2800\u3164\uFFA0]/gu, ' ');
   return [...noCtl.replace(/\s+/g, ' ').trim()].slice(0, maxChars).join('');
 }
 
+const DOTS = /[。．｡﹒․܁܂]/g;
+const LINKISH = /(:\/\/|www\.|[\p{L}\p{N}_-]\.\p{L}{2,}|\d{1,3}(\.\d{1,3}){3}|@[\p{L}\p{N}_]{3,}|\bNQ\s?\d{2}(\s?[0-9A-Z]{4}){2})/iu;
+
 /**
- * Anything that reads like a web address. A goal name and a gift note are shown to strangers (on the invite page, in a
- * shared message), so neither may carry a link someone else could plant there.
+ * Does the text read like a way to reach someone: a web address (any script, look-alike dots, invisible marks before
+ * the dot, a bare IP), an @handle or a Nimiq address? A goal name and a gift note are shown to strangers (the invite
+ * page, a shared message), so neither may carry one someone else planted. The comparison runs on a folded copy
+ * (NFKC, no invisible or combining marks, look-alike dots made plain); the text itself is never changed by it.
  */
-export const URLISH = /(:\/\/|www\.|[a-z0-9-]{2,}\.[a-z]{2,})/i;
+export function linkish(text) {
+  if (typeof text !== 'string') return false;
+  const s = text.normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{M}]/gu, '').replace(DOTS, '.');
+  return LINKISH.test(s);
+}
 
 /** A goal name as it may be shown: cleaned, with at least one letter or digit, and nothing that reads like a link. */
 export function cleanName(input) {
   const name = cleanText(input, 40);
-  return name && /[\p{L}\p{N}]/u.test(name) && !URLISH.test(name) ? name : '';
+  return name && /[\p{L}\p{N}]/u.test(name) && !linkish(name) ? name : '';
 }
 
 function b64urlEncode(text) {
@@ -120,7 +130,7 @@ export function parseMemo(hex) {
   const m = /^KZ1\|([a-z2-9]{6})\|?(.*)$/s.exec(text);
   if (!m) return null;
   const note = cleanText(m[2], 60);
-  return { id: m[1], note: URLISH.test(note) ? '' : note }; // anyone can pay 1 NIM with a note: no links shown
+  return { id: m[1], note: linkish(note) ? '' : note }; // anyone can pay 1 NIM with a note: no links shown
 }
 
 /**

@@ -55,11 +55,9 @@ function adoptAddress(address) {
   try {
     if (st.address) localStorage.setItem(`${storeKey()}.${st.address.replace(/\s/g, '')}`, JSON.stringify(st));
     const other = localStorage.getItem(`${storeKey()}.${address.replace(/\s/g, '')}`);
-    const prefs = { lang: st.lang, noCount: st.noCount };
-    st = G.sanitizeState(other ? JSON.parse(other) : null);
-    Object.assign(st, prefs);
+    st = G.carryOver(st, G.sanitizeState(other ? JSON.parse(other) : null));
   } catch {
-    st = G.sanitizeState(null);
+    st = G.carryOver(st, G.sanitizeState(null));
   }
   st.address = address;
   saveState();
@@ -1065,7 +1063,7 @@ function sheetGoal(goal = null, presetName = '', { from = null } = {}) {
     const cleanName = J.cleanName(name.value);
     const luna = toLuna(target.value);
     const weeklyLuna = weekly.value.trim() ? toLuna(weekly.value) : 0;
-    if (J.URLISH.test(J.cleanText(name.value, 40))) { err.textContent = t('form.errNameLink'); return; }
+    if (J.linkish(J.cleanText(name.value, 40))) { err.textContent = t('form.errNameLink'); return; }
     if (!cleanName) { err.textContent = t('form.errName'); return; }
     if (!luna || luna < LUNA) { err.textContent = t('form.errTarget'); return; }
     if (weeklyLuna === null) { err.textContent = t('form.errWeekly'); return; }
@@ -1422,8 +1420,10 @@ function sheetPayInvoice(goal) {
     if (typeof provider?.payLightningInvoice !== 'function') { toast(t('err.update'), 'bad', 6000); return; }
     sending = true;
     btn.disabled = true;
+    // Taken once: the text box could change while the hash is worked out, and the hash must match what is paid.
+    const { invoice, sats } = checked;
     // Stored before the wallet is asked, so a closed sheet, a reload or a crash can't lead to a second payment.
-    const tried = await sha256Hex(checked.invoice);
+    const tried = await sha256Hex(invoice);
     if (st.lnTried.includes(tried)) {
       toast(t('spend.duplicate'), 'bad', 7000);
       btn.textContent = t('spend.payGo');
@@ -1435,9 +1435,9 @@ function sheetPayInvoice(goal) {
     btn.textContent = t('save.waiting');
     let keepOff = false;
     try {
-      const res = await provider.payLightningInvoice({ invoice: checked.invoice });
+      const res = await provider.payLightningInvoice({ invoice });
       const hash = typeof res?.hash === 'string' && /^[0-9a-fA-F]{64}$/.test(res.hash) ? res.hash : null;
-      const entry = { kind: 'spend', luna: 0, at: Date.now(), status: 'ok', hash: hash || undefined, sats: checked.sats || undefined };
+      const entry = { kind: 'spend', luna: 0, at: Date.now(), status: 'ok', hash: hash || undefined, sats: sats || undefined };
       goal?.entries.push(entry);
       saveState();
       closeSheet(true);
@@ -1605,8 +1605,11 @@ function jarHero(jar, size = 140) {
     jar.date ? h('div', { class: 'tiny mute' }, t('goal.by', { date: dateText(jar.date) })) : null);
 }
 
-/** Gifts so far. The public invite page shows amounts only: a note is text a stranger paid 1 NIM to publish. */
-function giftList(notes = true) {
+/**
+ * Gifts so far, on the pages anyone with the link sees (in a browser or inside Nimiq Pay): amounts only, since a note is
+ * text a stranger can publish for 1 NIM. The goal's owner reads the notes in their own goal's activity.
+ */
+function giftList(notes = false) {
   const gifts = R.gifts;
   return h('section', { class: 'card' }, h('h3', {}, t('jar.gifts')),
     gifts === null
@@ -1719,7 +1722,7 @@ function viewJar() {
   return chrome(h('main', { 'data-rig': 'jar' },
     jarHero(jar),
     payBox,
-    giftList(),
+    giftList(false),
     h('a', { class: 'btn wide', href: location.pathname + (DEMO ? '?demo=1' : ''), 'data-rig': 'j-own' }, t('jar.own')),
     h('p', { class: 'tiny mute center' }, t('jar.how'))));
 }

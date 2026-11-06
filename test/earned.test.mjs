@@ -91,6 +91,32 @@ test('the read stays inside its budget: requests, accounts, pages and time', asy
   }
 });
 
+test('payment accounts named by the node are checked before anything is read from them', async () => {
+  const asked = [];
+  const junk = [
+    { hash: 'j1', from: NQ32, to: 'NQ00 not an address', toType: 2, value: 1, executionResult: true },
+    { hash: 'j2', from: NQ32, to: '../../admin', toType: 2, value: 1, executionResult: true },
+    { hash: 'j3', from: NQ32, to: NQ43.replace(/ /g, '').toLowerCase(), toType: 2, value: 1, executionResult: true },
+  ];
+  C.useBackend((m, p) => { asked.push(p[0]); return p[0] === NQ32 ? [...junk, ...FIX.history[NQ32]] : node()(m, p); });
+  try {
+    await C.stakeLedger(NQ32, [NQ32, 'garbage'], {}, flowsOf(NQ32), C.readBudget());
+    assert.ok(asked.every((a) => /^NQ\d{2}( [0-9A-Z]{4}){8}$/.test(a)), JSON.stringify(asked));
+    assert.equal(asked.filter((a) => a === NQ43).length, 1); // the lower-case spelling is the same account, read once
+  } finally {
+    C.useBackend(null);
+  }
+});
+
+test('a slow node can\'t stretch a read past its time budget', { timeout: 3000 }, async () => {
+  C.useBackend(() => new Promise(() => {})); // never answers; the backend path has no timeout of its own
+  const b = C.readBudget({ ms: 300 });
+  const t0 = Date.now();
+  await assert.rejects(C.fullHistory(NQ32, b), /budget/);
+  assert.ok(Date.now() - t0 < 200, 'refused up front: less than 0.5 s of budget left');
+  C.useBackend(null);
+});
+
 test('a full page of history that can\'t be paged further is unknown', async () => {
   const page = Array.from({ length: 500 }, (_, i) => ({ hash: `h${i}`, from: 'x', to: 'y', value: 1 }));
   C.useBackend(() => page); // the same 500 again for every page: nothing new, so it can't be complete

@@ -152,6 +152,13 @@ export function install() {
     await new Promise((r) => setTimeout(r, 120));
     return backend(method, params);
   });
+  // Tests can seed gifts that survive a page load (sessionStorage, demo only): [{ luna, memo }].
+  try {
+    for (const g of JSON.parse(sessionStorage.getItem('kuza.demo.seed') || '[]')) {
+      const data = [...new TextEncoder().encode(String(g.memo))].map((b) => b.toString(16).padStart(2, '0')).join('');
+      mine({ from: FRIEND, to: ME, value: Number(g.luna) || 0, recipientData: data });
+    }
+  } catch { /* no seed */ }
   setInterval(() => {
     chain.height += 1;
     if (chain.staker && chain.staker.balance && !chain.noGrowth) chain.staker.balance += Math.ceil(chain.staker.balance * 2.5e-9);

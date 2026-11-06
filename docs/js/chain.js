@@ -2,6 +2,7 @@
 // Kuza never sends anything through here. Transactions only ever go through the wallet.
 
 import { normalizeStaker } from './staking.js';
+import { normalizeAddress } from './nim.js';
 
 const RPC_URLS = {
   mainnet: 'https://rpc.nimiqwatch.com',
@@ -99,8 +100,8 @@ export async function getHistory(address, max = 100) {
 const PAGE = 500;
 
 /**
- * A spending limit for one read of the stake's history, so a judge's phone never hammers the public node: at most
- * `requests` calls and `ms` milliseconds. Running out throws, which the app shows as "not known yet".
+ * A spending limit for one read of the stake's history, so a new phone never hammers the public node: at most
+ * `requests` calls and `ms` milliseconds, in-flight requests included. Running out throws ("not known yet").
  */
 export function readBudget({ requests = 16, ms = 15000, pages = 2, accounts = 12 } = {}) {
   return { left: requests, until: Date.now() + ms, pages, accounts };
@@ -118,7 +119,10 @@ export async function fullHistory(address, budget = readBudget()) {
   let startAt = null;
   for (let p = 0; p < budget.pages; p++) {
     spend(budget);
-    const page = await call('getTransactionsByAddress', [address, PAGE, startAt], { timeout: 9000, retries: 0 });
+    // Each request may only use what's left of the time budget, so the whole read really ends within it.
+    const timeout = Math.min(9000, budget.until - Date.now());
+    if (timeout < 500) throw new RpcError('read budget used up');
+    const page = await call('getTransactionsByAddress', [address, PAGE, startAt], { timeout, retries: 0 });
     if (!Array.isArray(page)) throw new RpcError('bad history');
     let fresh = 0;
     for (const tx of page) {
@@ -141,8 +145,13 @@ export async function fullHistory(address, budget = readBudget()) {
  */
 export async function stakeLedger(owner, accounts, saved, flowsOf, budget = readBudget()) {
   const own = await fullHistory(owner, budget);
-  const others = new Set((accounts || []).filter((a) => a && a !== owner));
-  for (const tx of own) if (tx && tx.from === owner && tx.toType === 2 && typeof tx.to === 'string') others.add(tx.to);
+  // Addresses from the node are data: only valid Nimiq addresses are ever read next.
+  const others = new Set((accounts || []).map(normalizeAddress).filter((a) => a && a !== owner));
+  for (const tx of own) {
+    if (!tx || tx.from !== owner || tx.toType !== 2) continue;
+    const a = normalizeAddress(tx.to);
+    if (a && a !== owner) others.add(a);
+  }
   if (others.size > budget.accounts) throw new RpcError('too many accounts to read');
   const all = [...others];
   const total = { ...flowsOf(own, all) };

@@ -139,7 +139,9 @@ test('jar link round trip and hostile input', () => {
     { ...good, a: S.STAKING_CONTRACT.replace(/ /g, '') }, { ...good, a: `NQ07${'0'.repeat(32)}` }, { ...good, a: 'NQ81C01NBASE00000000000000000000000000'.slice(0, 36) },
   ]) assert.equal(J.decodeJar(enc(bad)), null, JSON.stringify(bad));
   for (const bad of ['', '!!!', 'a'.repeat(513), undefined, 5, '%%%']) assert.equal(J.decodeJar(bad), null);
-  assert.equal(J.decodeJar(enc({ ...good, n: 'a\u202eb\u0000c\u061cd\u3164e\u00adf\u2060g\ufff9h\u{e0041}i' })).name, 'a b c d e f g h i');
+  // Invisible (default-ignorable) characters are removed outright; other controls become a space. A gap left where an
+  // invisible mark was could hide a link's dot from the link check (security read 2, 'evil\u034F.com').
+  assert.equal(J.decodeJar(enc({ ...good, n: 'a\u202eb\u0000c\u061cd\u3164e\u00adf\u2060g\ufff9h\u{e0041}i' })).name, 'ab cdefg hi');
 });
 
 test('memo fits 64 bytes, with multibyte text too', () => {
