@@ -149,6 +149,7 @@ main { display: flex; flex-direction: column; gap: 12px; }
 .wk { flex: 1; height: 10px; border-radius: 4px; background: #ece9df; }
 .wk.met { background: linear-gradient(135deg, #f7c948, #ec991c); }
 .wk.now { outline: 2px solid var(--ink); outline-offset: 1px; }
+.wk.pre { background: transparent; box-shadow: inset 0 0 0 1.5px #e2ded2; }
 
 .entry { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
 .entry:first-of-type { border-top: 0; }

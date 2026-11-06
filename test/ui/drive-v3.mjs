@@ -86,6 +86,9 @@ async function main() {
     await t.waitFor('[data-rig=plan-card]');
     const plan = await t.eval(`document.querySelector('[data-rig=plan-card]').innerText`);
     check('plan card: monthly plan, next saving, pace, streak', plan.includes('Plan: 100 NIM a month') && plan.includes('Done this month') && plan.includes('At this pace') && plan.includes('1 month in a row'));
+    check('plan strip: "Last 8 months" shows 8 marks, the 7 before the goal existed empty, this month gold', await t.eval(`(() => {
+      const s = document.querySelectorAll('[data-rig=plan-strip] .wk'); const pre = document.querySelectorAll('[data-rig=plan-strip] .wk.pre');
+      return s.length === 8 && pre.length === 7 && s[7].classList.contains('met') && s[7].classList.contains('now'); })()`));
     await t.waitFor('[data-rig=mark-banner]', 8000);
     check('25% moment shown on the goal', (await t.eval(`document.querySelector('[data-rig=mark-banner]').innerText`)).includes('A quarter of the way'));
     await t.shot(`${SHOTS}/v3-02-goal-plan-mark.png`);

@@ -966,7 +966,10 @@ function planCard(goal, prog, now) {
       run ? h('span', { class: 'chip fire', 'data-rig': 'streak' }, icon('flame', 13), tn(`plan.streak.${p}`, run)) : null),
     rows,
     late && fix?.amount ? h('p', { class: 'tiny warn', 'data-rig': 'plan-late' }, t(`plan.late.${p}`, { amount: nim(fix.amount, 0) })) : null,
-    h('div', { class: 'weeks', 'aria-hidden': 'true' }, strip.map((w) => h('span', { class: `wk ${w.met ? 'met' : ''} ${w.current ? 'now' : ''}`, title: nim(w.amount) }))),
+    // Always 8 marks, so "Last 8" stays true for a young goal: periods before the goal existed are empty outlines.
+    h('div', { class: 'weeks', 'aria-hidden': 'true', 'data-rig': 'plan-strip' },
+      Array.from({ length: Math.max(0, 8 - strip.length) }, () => h('span', { class: 'wk pre' })),
+      strip.map((w) => h('span', { class: `wk ${w.met ? 'met' : ''} ${w.current ? 'now' : ''}`, title: nim(w.amount) }))),
     h('p', { class: 'tiny mute' }, t(`plan.stripNote.${p}`)));
 }
 
