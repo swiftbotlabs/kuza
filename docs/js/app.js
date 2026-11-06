@@ -30,6 +30,7 @@ const R = {
   banner: null, celebrate: null, openNew: undefined,
 };
 let st = G.sanitizeState(null);
+let demoChain = null; // the pretend chain module, demo only
 const root = () => document.getElementById('app');
 
 /* ---------- storage ---------- */
@@ -1582,7 +1583,27 @@ function sheetSettings() {
       h('span', { class: 'small' }, t('settings.count'))),
     st.address ? h('p', { class: 'tiny mute' }, t('settings.wallet', { address: shortAddress(st.address) })) : null,
     st.address ? h('button', { class: 'btn wide', 'data-rig': 'reconnect', onclick: async () => { closeSheet(true); try { W.getProvider()?.disconnect?.(); await connect(); await sync(); } catch (err) { walletFailure(err); } } }, t('settings.refresh')) : null,
-    h('a', { class: 'btn wide', href: '#/how', onclick: () => closeSheet(true) }, t('foot.how'))));
+    h('a', { class: 'btn wide', href: '#/how', onclick: () => closeSheet(true) }, t('foot.how')),
+    DEMO ? demoReset() : null));
+}
+
+/** Demo only: clears the pretend chain (sessionStorage) and the demo's goals (localStorage), on a second tap. */
+function demoReset() {
+  let armed = false;
+  const btn = h('button', { class: 'btn wide', 'data-rig': 'demo-reset', onclick: () => {
+    if (!armed) {
+      armed = true;
+      btn.textContent = t('settings.resetDemoSure');
+      btn.classList.add('danger');
+      return;
+    }
+    demoChain?.wipe();
+    try {
+      for (const k of Object.keys(localStorage)) if (k.startsWith('kuza.demo.')) localStorage.removeItem(k);
+    } catch { /* storage off: nothing was kept */ }
+    location.replace(location.pathname + location.search);
+  } }, t('settings.resetDemo'));
+  return btn;
 }
 
 /* ---------- group jar ---------- */
@@ -1974,8 +1995,8 @@ function fatal() {
 async function boot() {
   document.addEventListener('touchstart', () => {}, { passive: true }); // lets iOS WebViews show :active pressed states
   if (DEMO) {
-    const mock = await import('./mock.js');
-    mock.install();
+    demoChain = await import('./mock.js');
+    demoChain.install();
   }
   R.network = W.hostNetwork();
   R.fiat = W.hostFiat();

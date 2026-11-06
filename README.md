@@ -133,7 +133,7 @@ docs/          the site, served as static files on Cloudflare Workers. No build 
   js/staking.js, goals.js, jar.js, nim.js, nudge.js, invite.js, rewards.js, spend.js, qr.js   pure logic, unit tested
   js/chain.js  read-only JSON-RPC
   js/wallet.js the Nimiq Pay provider
-  js/mock.js   pretend wallet and chain for ?demo=1
+  js/mock.js   pretend wallet and chain for ?demo=1 (kept for the browser tab; Settings > Reset demo starts over)
   site.css, js/site.js   the landing page in a normal browser (index.html holds its text, so it reads without JavaScript)
   js/vendor/   @nimiq/mini-app-sdk 0.2.4 from npm, unmodified apart from the source map comment
 worker/        optional helper on Cloudflare Workers: wallet count, trimmed pool list, price
@@ -147,6 +147,7 @@ python3 -m http.server -d docs 8000     # open http://localhost:8000/?demo=1
 npm test                                # logic and translations
 node test/ui/drive.mjs /tmp/kuza-ui     # needs google-chrome; drives the demo and keeps screenshots
 node test/ui/drive-v3.mjs /tmp/kuza-v3  # plans, rewards, sharing, Lightning, the invite page (also needs zbarimg)
+node test/ui/drive-demo-chain.mjs /tmp/kuza-demo  # the demo's pretend chain survives a reload; Reset demo
 node test/qr-decode.mjs /tmp/kuza-qr    # QR codes read back by zbarimg
 ```
 

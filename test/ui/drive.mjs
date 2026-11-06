@@ -239,7 +239,7 @@ async function main() {
     await t.eval(`document.querySelector('.card.goal')?.click()`);
     await sleep(300);
 
-    // The reload reset the pretend chain, so the wallet has no stake while the goal remembers one.
+    // Give the pretend chain exactly the stake the goal remembers (the send above never went out).
     await t.eval(`window.__kuzaDemo.chain.staker = { balance: 160e5, inactiveBalance: 0, retiredBalance: 0, inactiveFrom: null, delegation: 'NQ15 HNAH YRVH DFVM YHAG BSXG 0QHK KA0Q XDR7' }`);
     await t.eval('document.dispatchEvent(new Event("visibilitychange"))');
     await sleep(500);

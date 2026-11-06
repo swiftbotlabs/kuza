@@ -17,6 +17,77 @@ const chain = {
   history: [],
 };
 
+// The pretend chain lasts for the browser tab (sessionStorage, demo only), so a reload keeps the wallet, the stake,
+// the cooling-off and the history in step with the goals the app keeps in localStorage. Settings > Reset demo clears both.
+export const CHAIN_KEY = 'kuza.demo.chain';
+const SAVED_MAX = 256 * 1024; // characters; a demo tab never comes close
+const HISTORY_MAX = 300;
+const isLuna = (n) => Number.isSafeInteger(n) && n >= 0;
+const isAddr = (a) => typeof a === 'string' && a.length <= 64;
+const isHex = (x, max) => typeof x === 'string' && x.length <= max && /^[0-9a-f]*$/i.test(x);
+
+/** A stored transaction, rebuilt field by field; null if anything is off. */
+function cleanTx(tx) {
+  if (!tx || typeof tx !== 'object' || !/^[0-9a-f]{64}$/.test(tx.hash) || !isLuna(tx.blockNumber) || !isLuna(tx.timestamp)
+    || typeof tx.executionResult !== 'boolean' || !isAddr(tx.from) || !isAddr(tx.to) || !isLuna(tx.value) || !isHex(tx.recipientData, 1024)) return null;
+  const out = { hash: tx.hash, blockNumber: tx.blockNumber, timestamp: tx.timestamp, executionResult: tx.executionResult, from: tx.from, to: tx.to, value: tx.value, recipientData: tx.recipientData };
+  if (tx.senderData !== undefined) {
+    if (!isHex(tx.senderData, 64)) return null;
+    out.senderData = tx.senderData;
+  }
+  if (tx.relatedAddresses !== undefined) {
+    if (!Array.isArray(tx.relatedAddresses) || tx.relatedAddresses.length > 4 || !tx.relatedAddresses.every(isAddr)) return null;
+    out.relatedAddresses = [...tx.relatedAddresses];
+  }
+  return out;
+}
+
+function cleanStaker(s) {
+  if (s === null) return null;
+  if (!s || typeof s !== 'object' || !isLuna(s.balance) || !isLuna(s.inactiveBalance) || !isLuna(s.retiredBalance)
+    || !(s.inactiveFrom === null || isLuna(s.inactiveFrom)) || !isAddr(s.delegation)) return undefined;
+  return { balance: s.balance, inactiveBalance: s.inactiveBalance, retiredBalance: s.retiredBalance, inactiveFrom: s.inactiveFrom, delegation: s.delegation };
+}
+
+let wiped = false;
+
+/** Settings > Reset demo: forget the saved chain, and stop saving it, so the reload that follows starts fresh. */
+export function wipe() {
+  wiped = true;
+  try {
+    sessionStorage.removeItem(CHAIN_KEY);
+    sessionStorage.removeItem('kuza.demo.seed');
+  } catch { /* storage off: nothing was kept */ }
+}
+
+function saveChain() {
+  if (wiped) return;
+  try {
+    sessionStorage.setItem(CHAIN_KEY, JSON.stringify({ v: 1, height: chain.height, wallet: chain.wallet, staker: chain.staker, history: chain.history.slice(0, HISTORY_MAX) }));
+  } catch { /* storage off or full: the demo still runs, it just starts over on a reload */ }
+}
+
+/** Puts back the chain this tab saved. Anything malformed is ignored as a whole and the demo starts fresh. */
+function restoreChain() {
+  let saved;
+  try {
+    const raw = sessionStorage.getItem(CHAIN_KEY);
+    if (!raw || raw.length > SAVED_MAX) return false;
+    saved = JSON.parse(raw);
+  } catch { return false; }
+  if (!saved || saved.v !== 1 || !isLuna(saved.height) || !isLuna(saved.wallet) || !Array.isArray(saved.history) || saved.history.length > HISTORY_MAX) return false;
+  const staker = cleanStaker(saved.staker);
+  if (staker === undefined) return false;
+  const history = saved.history.map(cleanTx);
+  if (history.includes(null)) return false;
+  chain.height = saved.height;
+  chain.wallet = saved.wallet;
+  chain.staker = staker;
+  chain.history = history;
+  chain.txs = new Map(history.map((tx) => [tx.hash, tx]));
+  return true;
+}
+
 function ask(title, lines) {
   return new Promise((resolve, reject) => {
     const close = (ok) => {
@@ -45,6 +116,7 @@ function mine(fields) {
   const tx = { hash, blockNumber: chain.height + 2, timestamp: Date.now(), executionResult: true, from: ME, to: ME, value: 0, recipientData: '', ...fields };
   chain.txs.set(hash, tx);
   chain.history.unshift(tx);
+  saveChain();
   return hash;
 }
 
@@ -152,20 +224,28 @@ export function install() {
     await new Promise((r) => setTimeout(r, 120));
     return backend(method, params);
   });
-  // Tests can seed gifts that survive a page load (sessionStorage, demo only): [{ luna, memo }].
+  restoreChain();
+  // Tests can seed gifts for the next page load (sessionStorage, demo only): [{ luna, memo }]. They go on the chain
+  // once and are then kept with it, so the seed is used up.
   try {
-    for (const g of JSON.parse(sessionStorage.getItem('kuza.demo.seed') || '[]')) {
-      const data = [...new TextEncoder().encode(String(g.memo))].map((b) => b.toString(16).padStart(2, '0')).join('');
-      mine({ from: FRIEND, to: ME, value: Number(g.luna) || 0, recipientData: data });
+    const seed = sessionStorage.getItem('kuza.demo.seed');
+    if (seed) {
+      sessionStorage.removeItem('kuza.demo.seed');
+      for (const g of JSON.parse(seed).slice(0, 20)) {
+        const data = [...new TextEncoder().encode(String(g.memo).slice(0, 64))].map((b) => b.toString(16).padStart(2, '0')).join('');
+        mine({ from: FRIEND, to: ME, value: isLuna(Number(g.luna)) ? Number(g.luna) : 0, recipientData: data });
+      }
     }
   } catch { /* no seed */ }
   setInterval(() => {
     chain.height += 1;
     if (chain.staker && chain.staker.balance && !chain.noGrowth) chain.staker.balance += Math.ceil(chain.staker.balance * 2.5e-9);
+    saveChain();
   }, 1000);
+  addEventListener('pagehide', saveChain);
   window.__kuzaDemo = {
-    skipCooling() { chain.height += 2 * BLOCKS_PER_EPOCH; },
-    reward(luna) { if (chain.staker) chain.staker.balance += luna; },
+    skipCooling() { chain.height += 2 * BLOCKS_PER_EPOCH; saveChain(); },
+    reward(luna) { if (chain.staker) chain.staker.balance += luna; saveChain(); },
     emit(event, ...args) { for (const fn of listeners.get(event) || []) fn(...args); },
     chain,
     failNext(type, code, message, data) { chain.failNext = Object.assign(new Error(message), { type, code, data }); },
