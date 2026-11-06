@@ -76,6 +76,18 @@ test('27 known bypasses: refused as a goal name, in both link formats, and dropp
   }
 });
 
+test('emoji-label domains are refused too; emoji in ordinary names are fine', () => {
+  for (const b of ['i\u2764.ws', 'evil\u{1F642}.com', 'evil\u2764\uFE0F.com', '\u{1F355}.ws']) {
+    assert.ok(J.linkish(b), JSON.stringify(b));
+    assert.equal(J.cleanName(b), '', JSON.stringify(b));
+    assert.equal(J.parseMemo(hex(J.buildMemo('64ru59', b))).note, '', JSON.stringify(b));
+  }
+  for (const name of ['Trip \u{1F334}', '\u{1F393} fees 2027', 'Bike \u{1F6B2}. New one', 'Gift for Mama \u2764']) {
+    assert.ok(!J.linkish(name), JSON.stringify(name));
+    assert.equal(J.cleanName(name), name);
+  }
+});
+
 test('real names in the app\'s languages pass untouched (the check folds a copy, never the name)', () => {
   for (const name of LEGIT) {
     assert.ok(!J.linkish(name), `false positive ${JSON.stringify(name)}`);

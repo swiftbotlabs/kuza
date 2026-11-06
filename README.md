@@ -66,14 +66,28 @@ the chain:
 | The gift moved into the stake, 100 NIM | [`f196139159689150…`](https://nimiq.watch/#f196139159689150dd50ef37cee031f53bc66e7c16220e7db5fc5351139a9140) | 65,872,612 |
 | Retire the released 60 NIM, after the cooling-off | [`0386938fbc602dea…`](https://nimiq.watch/#0386938fbc602dea0fcfe92332731a8b0d197c5588ba66f30c90fe5a896d3768) | 65,924,317 |
 | Remove: 60 NIM from the staking contract back to the wallet | [`fbd6cde2ef983414…`](https://nimiq.watch/#fbd6cde2ef9834146a0ec0e608cdab924982819549c9658f8e115e0babe58eb2) | 65,924,337 |
+| A gift through the new invite link, 10 NIM, from the second phone | [`99dfdcce6410453b…`](https://nimiq.watch/#99dfdcce6410453bdc92552d0fdc413fcdcc362e76f95103c5f585b320b580f4) | 66,205,771 |
 
 That is the whole cycle, including the way out: Kuza had worked out the release at block 65,923,200, the retire went
 through at 65,924,317, and after the two approvals the staker shows 1,100 NIM active, 0 inactive and 0 retired. Also
 on mainnet: connecting, the safety warning on an invite link, the live cooling-off, the gift counted toward the goal,
 and goals surviving a close and reopen. Before that, every flow ran on testnet, on an emulator and a real phone.
 
-Not tested yet on a real phone: an iPhone; the invite page's button on a phone without Nimiq Pay; a Lightning payment;
-monthly plans and moving a goal on (these run in the demo and the tests). And rewards. Earned still shows +0 because no reward has reached the stake yet: the pool adds
+On 6 November, with the current version, on mainnet:
+
+- **Invite link into Nimiq Pay:** on the second phone the invite link, opened in Android Chrome, showed the invite page;
+  "Chip in with Nimiq Pay" opened Nimiq Pay (PIN), then Nimiq Pay's own "Open this mini app?" warning, then Kuza's
+  friend view of the first phone's goal, with the warning and the full address above the amount.
+- **A gift and what comes after it:** 10 NIM sent through Nimiq Pay's own Connect and Confirm sheets to
+  `NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM` with the goal's note (the last row above). The thank-you screen showed
+  +10 NIM, 110 of 50,000 NIM and 2 wallets chipped in, with the link to the transaction; its "New phone" idea opened a
+  new goal form with the name filled in.
+- **Reopening on the first phone:** no Connect sheet, Earned +0 NIM (correct: no reward has reached the stake yet), the
+  rewards sheet matching it, and "Copy invite message" as the main share button inside Nimiq Pay.
+- **Security headers:** Kuza still loads inside Nimiq Pay with the headers that forbid framing.
+
+Not tested yet on a real phone: an iPhone; the invite page's button on a phone without Nimiq Pay installed (the Play
+Store fallback); a Lightning payment; monthly plans and moving a goal on (these run in the demo and the tests). And rewards. Earned still shows +0 because no reward has reached the stake yet: the pool adds
 rewards to a stake only once they reach 1 NIM, and at 1,100 NIM that takes about six and a half days. The pool's own
 figures showed 0.495 NIM built up on 4 November, so the first reward is due around 8 November. All wallets above are
 our own test wallets; we know of no outside user yet.
@@ -83,12 +97,12 @@ our own test wallets; we know of no outside user yet.
 Kuza counts each wallet once, when it connects on mainnet. Only a keyed hash is stored, so the count can't say whose
 wallets they are. The live number: https://kuza-api.swiftbotlab.workers.dev/v1/stats
 
-On 4 November 2026 it read **5 wallets**:
+On 6 November 2026 it read **6 wallets**:
 
 - **2 are ours:** the test wallet `NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM` on the first phone, which made every
   goal transaction above, and `NQ04 HH5C HSLU VHGD EP4G BA1R 1MGB PT0X EY9V` on the second phone, counted when it sent
   the gift.
-- **The other 3:** we can't tell whose they are. Some may be our own earlier test sessions, so we don't count any of
+- **The other 4:** we can't tell whose they are. Some may be our own earlier test sessions, so we don't count any of
   them as outside users.
 
 Outside wallets with a transaction made through Kuza:

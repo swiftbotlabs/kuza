@@ -18,7 +18,7 @@ export function cleanText(input, maxChars) {
 }
 
 const DOTS = /[。．｡﹒․܁܂]/g;
-const LINKISH = /(:\/\/|www\.|[\p{L}\p{N}_-]\.\p{L}{2,}|\d{1,3}(\.\d{1,3}){3}|@[\p{L}\p{N}_]{3,}|\bNQ\s?\d{2}(\s?[0-9A-Z]{4}){2})/iu;
+const LINKISH = /(:\/\/|www\.|[\p{L}\p{N}\p{Extended_Pictographic}_-]\.\p{L}{2,}|\d{1,3}(\.\d{1,3}){3}|@[\p{L}\p{N}_]{3,}|\bNQ\s?\d{2}(\s?[0-9A-Z]{4}){2})/iu;
 
 /**
  * Does the text read like a way to reach someone: a web address (any script, look-alike dots, invisible marks before
