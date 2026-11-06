@@ -1654,8 +1654,9 @@ function viewInvite(jar) {
       sheetQR(link, t('inv.qrTitle'), t('inv.qrBody'));
       return;
     }
-    if (PLATFORM === 'ios') {
-      // No fallback on iOS: if the page is still in front a moment later, the app probably isn't installed.
+    {
+      // If the page is still in front a moment later, nothing took the link: no app (iOS has no store fallback), or a
+      // chat app's built-in browser that won't hand links to other apps (Android). Say what to do about either.
       const at = Date.now();
       const timer = setInterval(() => {
         if (document.hidden) { clearInterval(timer); return; }

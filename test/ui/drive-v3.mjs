@@ -258,6 +258,10 @@ async function main() {
     await a.eval(`document.querySelector('[data-rig=inv-new]').scrollIntoView()`);
     await a.shot(`${SHOTS}/v3-18-invite-android-steps.png`);
     check('android: no CSP violations', a.csp.length === 0);
+    await a.eval(`window.scrollTo(0, 0); document.querySelector('[data-rig=open-pay]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))`);
+    await sleep(3200);
+    check('android: link not taken (chat browser, no app) -> the help shows', (await a.eval(`!document.querySelector('[data-rig=inv-noapp]').hidden`)) && (await a.text()).includes('open it in your browser'));
+    await a.shot(`${SHOTS}/v3-18b-invite-android-noapp.png`);
 
     const i = await tab({ ua: IPHONE });
     await i.go(`${base}?j=${v}`, 1500);
