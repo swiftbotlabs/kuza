@@ -651,7 +651,7 @@ function summaryCard() {
       h('div', {}, h('div', { class: 'hero-k' }, t('home.inWallet')), h('div', { class: 'hero-v' }, nim(inWallet))),
       rate ? h('div', {}, h('div', { class: 'hero-k' }, t('home.rate')), h('div', { class: 'hero-v' }, `~${rate}`)) : null),
     pool ? h('div', { class: 'hero-foot' }, t('home.pool', { name: pool.name }),
-      last ? ` · ${t('home.lastReward', { amount: nim(last.luna), date: shortDay(last.at) })}` : R.staker ? ` · ${t('home.noReward')}` : '') : null);
+      last ? ` · ${t('home.lastReward', { amount: nim(last.luna), date: shortDay(last.at) })}` : R.staker && !earned() ? ` · ${t('home.noReward')}` : '') : null);
 }
 
 const notedInWallet = () => openGoals().reduce((sum, g) => sum + G.parts(g).wallet, 0);
@@ -1281,7 +1281,7 @@ function sheetRewards() {
       ? h('section', {}, h('h3', {}, t('rw.seen')), events.slice(0, 8).map((e) => h('div', { class: 'entry' },
         h('div', {}, h('div', { class: 'small' }, t('rw.event')), h('div', { class: 'tiny mute' }, when(e.at))),
         h('div', { class: 'entry-v good' }, `+${nim(e.luna)}`))))
-      : h('p', { class: 'small', 'data-rig': 'rw-none' }, R.staker ? t('rw.none') : t('rw.noStake')),
+      : h('p', { class: 'small', 'data-rig': 'rw-none' }, !R.staker ? t('rw.noStake') : total > 0 ? t('rw.earlier') : t('rw.none')),
     pool ? h('div', { class: 'route' },
       h('p', { class: 'small' }, h('b', {}, pool.name), ' · ', pool.fee !== null ? t('pool.fee', { fee: fmtPct(pool.fee) }) : ''),
       h('p', { class: 'tiny mute' }, pool.schedule ? t('rw.schedule', { schedule: pool.schedule }) : t('rw.scheduleOwn'))) : null,
