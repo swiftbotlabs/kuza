@@ -73,7 +73,7 @@ through at 65,924,317, and after the two approvals the staker shows 1,100 NIM ac
 on mainnet: connecting, the safety warning on an invite link, the live cooling-off, the gift counted toward the goal,
 and goals surviving a close and reopen. Before that, every flow ran on testnet, on an emulator and a real phone.
 
-On 6 November, with the current version, on mainnet:
+On 6 November, with v3, on mainnet:
 
 - **Invite link into Nimiq Pay:** on the second phone the invite link, opened in Android Chrome, showed the invite page;
   "Chip in with Nimiq Pay" opened Nimiq Pay (PIN), then Nimiq Pay's own "Open this mini app?" warning, then Kuza's
