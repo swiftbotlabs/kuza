@@ -40,8 +40,12 @@ async function main() {
     // ---------- A. Saving with a monthly plan ----------
     await t.go(`${base}?demo=1&lang=en`);
     await t.eval('localStorage.clear()');
+    // The helper that serves prices can't be reached from this test origin; the app falls back to its last good value.
+    await t.eval(`localStorage.setItem('kuza.market', JSON.stringify({ at: Date.now(), value: { price: { usd: 0.00027 }, rate: 0.083 } }))`);
     await t.go(`${base}?demo=1&lang=en`);
     await still(t);
+    await t.waitText('8.3% a year before pool fees', 6000);
+    check('welcome: the rate is stated before pool fees (no pool chosen yet)', true);
     await t.click('[data-rig=connect]');
     await t.waitText('Pretend wallet');
     await t.click('[data-rig=demo-yes]');
@@ -96,9 +100,28 @@ async function main() {
     await t.click('[data-rig=earned]');
     await t.waitText('Reward added to your stake');
     check('rewards sheet: the event, the pool and how it works', (await t.text()).includes('Watched by this phone since'));
+    const rateLine = await t.eval(`document.querySelector('[data-rig=rw-rate]')?.textContent || ''`);
+    const poolLine = await t.eval(`document.querySelector('[data-rig=rewards-sheet] .route')?.textContent || ''`);
+    const fee = (poolLine.match(/(\d+(?:\.\d+)?)\s?% fee/) || [])[1];
+    check('rewards sheet: the estimate uses the pool\'s own fee, the same one the pool line shows', fee !== undefined && rateLine.includes(`${fee}% fee`) && rateLine.includes(poolLine.split(' · ')[0].trim()) && !(fee !== '5' && rateLine.includes('5% ')));
     await t.shot(`${SHOTS}/v3-04-rewards-sheet.png`);
     await t.click('[data-rig=sheet-close]');
     await sleep(250);
+    // The history behind the stake can't be read and the stake has moved: Earned says "not known yet", never a number.
+    await t.eval('window.__kuzaDemo.chain.historyFails = true; window.__kuzaDemo.reward(20000)');
+    await t.eval('document.dispatchEvent(new Event("visibilitychange"))');
+    await t.waitText('not known yet', 8000);
+    check('history unreadable: Earned shows no number', (await t.eval(`document.querySelector('[data-rig=earned-v]').textContent`)) === 'not known yet');
+    await t.click('[data-rig=earned]');
+    await t.waitFor('[data-rig=rw-unknown]');
+    check('history unreadable: the sheet explains, shows no amount', !(await t.has('[data-rig=rw-total] .num')) && (await t.text()).includes('rather than a guess'));
+    await t.shot(`${SHOTS}/v3-04b-rewards-unknown.png`);
+    await t.click('[data-rig=sheet-close]');
+    await sleep(250);
+    await t.eval('window.__kuzaDemo.chain.historyFails = false');
+    await t.eval('document.dispatchEvent(new Event("visibilitychange"))');
+    await t.waitText('+0.695 NIM', 8000);
+    check('history readable again: Earned proven again (0.495 + 0.2)', true);
 
     // ---------- B. Sharing ----------
     await t.eval(`document.querySelector('.card.goal').click()`);

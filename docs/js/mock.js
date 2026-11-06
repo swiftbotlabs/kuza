@@ -3,7 +3,8 @@
 
 import { useBackend } from './chain.js';
 import { h } from './ui.js';
-import { MIN_STAKE, BLOCKS_PER_EPOCH, electionBlockAfter, releaseBlock } from './staking.js';
+import { MIN_STAKE, BLOCKS_PER_EPOCH, electionBlockAfter, releaseBlock, STAKING_CONTRACT } from './staking.js';
+import { addressHex } from './nim.js';
 
 const LUNA = 100000;
 const ME = 'NQ49 DEMA 0000 0000 0000 0000 0000 0000 0001';
@@ -82,13 +83,13 @@ const provider = {
     if (value < MIN_STAKE || chain.staker) throw fail('this would jam a real wallet');
     chain.wallet -= value;
     chain.staker = { balance: value, inactiveBalance: 0, retiredBalance: 0, inactiveFrom: null, delegation };
-    return mine({ value });
+    return mine({ to: STAKING_CONTRACT, value, recipientData: `0501${addressHex(delegation) || ''}`, relatedAddresses: [STAKING_CONTRACT, ME, delegation] });
   },
   async sendStakeTransaction({ value }) {
     await ask('Confirm Transaction', ['Add Stake', `${value / LUNA} NIM`]);
     chain.wallet -= value;
     chain.staker.balance += value;
-    return mine({ value });
+    return mine({ to: STAKING_CONTRACT, value, recipientData: `06${addressHex(ME)}`, relatedAddresses: [STAKING_CONTRACT, ME] });
   },
   async sendSetActiveStakeTransaction({ newActiveBalance }) {
     await ask('Confirm Transaction', ['Set Active Stake', `${newActiveBalance / LUNA} NIM`]);
@@ -97,7 +98,7 @@ const provider = {
     s.balance = newActiveBalance;
     s.inactiveBalance = all - newActiveBalance;
     s.inactiveFrom = s.inactiveBalance ? electionBlockAfter(chain.height) : null;
-    return mine({});
+    return mine({ to: STAKING_CONTRACT, recipientData: '08', relatedAddresses: [STAKING_CONTRACT, ME] });
   },
   async sendRetireStakeTransaction({ retireStake }) {
     await ask('Confirm Transaction', ['Retire Stake', `${retireStake / LUNA} NIM`]);
@@ -106,7 +107,7 @@ const provider = {
     s.inactiveBalance -= retireStake;
     s.retiredBalance += retireStake;
     if (!s.inactiveBalance) s.inactiveFrom = null;
-    return mine({});
+    return mine({ to: STAKING_CONTRACT, recipientData: '09', relatedAddresses: [STAKING_CONTRACT, ME] });
   },
   async sendRemoveStakeTransaction({ value }) {
     await ask('Confirm Transaction', ['Remove Stake', `${value / LUNA} NIM`]);
@@ -114,7 +115,7 @@ const provider = {
     s.retiredBalance -= value;
     chain.wallet += value;
     if (!s.balance && !s.inactiveBalance && !s.retiredBalance) chain.staker = null;
-    return mine({ value });
+    return mine({ from: STAKING_CONTRACT, to: ME, value, senderData: '01', relatedAddresses: [STAKING_CONTRACT, ME] });
   },
   async sendBasicTransactionWithData({ recipient, value, data }) {
     await ask('Confirm Transaction', [`Send ${value / LUNA} NIM`, recipient, `Message: ${data}`]);
@@ -135,7 +136,9 @@ function backend(method, params) {
       if (!tx) throw Object.assign(new Error('Transaction not found'), { answer: true });
       return tx;
     }
-    case 'getTransactionsByAddress': return chain.history.filter((t) => t.to === params[0] || t.from === params[0]);
+    case 'getTransactionsByAddress':
+      if (chain.historyFails) throw new Error('history unavailable'); // a test can make the history unreadable
+      return chain.history.filter((t) => t.to === params[0] || t.from === params[0]);
     case 'getValidatorByAddress': return { address: params[0], jailedFrom: null, retired: false };
     case 'getAccountByAddress': return { address: params[0], balance: 0, type: 'basic' };
     default: throw new Error(`demo: ${method}`);

@@ -106,19 +106,38 @@ function hours(blocks) {
   return t('time.hours', { n: Math.round(hrs) });
 }
 
-function rateText(fee = 0.05) {
+/** A yearly reward estimate. With a fee it's after that fee; with none it's before any pool fee, and says so. */
+function rateText(fee = null) {
   const gross = R.market?.rate;
   if (!gross) return null;
-  return new Intl.NumberFormat(lang(), { style: 'percent', maximumFractionDigits: 1 }).format(gross * (1 - fee));
+  const net = typeof fee === 'number' && fee >= 0 && fee <= 1 ? gross * (1 - fee) : gross;
+  return new Intl.NumberFormat(lang(), { style: 'percent', maximumFractionDigits: 1 }).format(net);
 }
 
-const earned = () => G.earnedTotal(R.staker?.total ?? 0, st.baseline ?? 0, st.goals);
+/** The estimate line for the user's own pool: after its real fee when the fee is known, else before pool fees. */
+function rateLine() {
+  const pool = poolOf(R.staker?.delegation);
+  if (pool && typeof pool.fee === 'number') {
+    const rate = rateText(pool.fee);
+    return rate ? t('how.a3rate', { rate, name: pool.name, fee: fmtPct(pool.fee) }) : null;
+  }
+  const gross = rateText(null);
+  return gross ? t('how.a3gross', { rate: gross }) : null;
+}
+
+/**
+ * Earned, only as the chain proves it: stake now minus every deposit into it plus every withdrawal, read from the
+ * history of the wallet's own accounts (C.walletStakeHistory, RW.stakeFlows). R.proven.earned is null when that can't
+ * be read completely; R.proven is undefined before the first read. earned() is for progress maths and counts only proof.
+ */
+const earned = () => (Number.isSafeInteger(R.proven?.earned) ? R.proven.earned : 0);
+const earnedLabel = () => (R.proven === undefined ? '…' : R.proven.earned === null ? t('rw.unknownShort') : `+${nim(R.proven.earned)}`);
 const openGoals = () => st.goals.filter((g) => !g.closedAt);
 const findGoal = (id) => st.goals.find((g) => g.id === id);
 const poolOf = (address) => R.validators.find((v) => v.address === address) || null;
 
 function goalProgress(goal) {
-  return G.progress(goal, G.earnedShare(goal, st.goals, earned()));
+  return G.progress(goal, G.earnedShare(goal, st.goals, earned(), R.proven?.net ?? 0));
 }
 
 function bestPool() {
@@ -204,6 +223,7 @@ async function sync() {
       saveState();
     }
     await Promise.all([checkPending(), refreshJail(staker).catch(() => {})]);
+    await proveEarned().catch(() => {});
     finishWithdrawIfDone();
     noteRewards();
     if (!R.fresh && R.spendable === null) await quietWallet().catch(() => {});
@@ -225,11 +245,36 @@ async function sync() {
   }
 }
 
-/** Book any rise in Earned as a reward that arrived, unless money is moving and the numbers may be mid-change. */
+const stakeCache = new Map(); // histories of old payment accounts, which never change again
+
+/**
+ * Read the deposits and withdrawals behind the stake from the chain and work out Earned. The stake is read again after
+ * the history: if it moved in between, nothing is booked and the next sync tries again. A previous answer stays valid
+ * while the stake is unchanged; otherwise a failed or partial read means "not known yet", never a guess.
+ */
+async function proveEarned(force = false) {
+  if (!st.address || R.staker === undefined || hasPending()) return;
+  const total = R.staker?.total ?? 0;
+  // A proven answer for an unchanged stake stays good for a while; "not known yet" is retried at every sync.
+  if (!force && R.proven && R.proven.earned !== null && R.proven.total === total && R.proven.owner === st.address && Date.now() - R.proven.at < 10 * 60e3) return;
+  const keep = R.proven && R.proven.total === total && R.proven.owner === st.address && R.proven.earned !== null ? R.proven : null;
+  try {
+    const txs = await C.walletStakeHistory(st.address, st.accounts, stakeCache);
+    const again = await C.getStaker(st.address);
+    if ((again?.total ?? 0) !== total) return; // money moved while reading
+    const flows = RW.stakeFlows(txs, st.address, st.accounts);
+    const value = RW.provenEarned(total, flows);
+    R.proven = { earned: value, net: Math.max(0, flows.deposits - flows.withdrawals), total, owner: st.address, at: Date.now() };
+  } catch {
+    R.proven = keep || { earned: null, net: R.proven?.net ?? 0, total, owner: st.address, at: Date.now() };
+  }
+}
+
+/** Book any rise in proven Earned as a reward that arrived, unless money is moving and the numbers may be mid-change. */
 function noteRewards() {
-  if (R.staker === undefined) return;
+  if (R.staker === undefined || !Number.isSafeInteger(R.proven?.earned)) return;
   const steady = !hasPending() && !st.unstake;
-  const { rw, added } = RW.trackRewards(st.rewards, earned(), Date.now(), steady);
+  const { rw, added } = RW.trackRewards(st.rewards, R.proven.earned, Date.now(), steady);
   if (rw === st.rewards) return;
   st.rewards = rw;
   saveState();
@@ -640,18 +685,18 @@ function summaryCard() {
   const staked = R.staker?.total ?? 0;
   const inWallet = notedInWallet();
   const pool = poolOf(R.staker?.delegation);
-  const rate = rateText(pool?.fee ?? 0.05);
+  const rate = pool && typeof pool.fee === 'number' ? rateText(pool.fee) : null; // after this pool's real fee, or not at all
   const last = RW.lastReward(st.rewards);
   return h('section', { class: 'hero' },
     h('div', { class: 'hero-label' }, t('home.staked')),
     R.staker === undefined ? h('div', { class: 'skeleton w60' }) : amountBlock(staked, { big: true }),
     h('div', { class: 'hero-row' },
       h('button', { class: 'hero-btn', 'data-rig': 'earned', 'aria-label': t('rw.title'), onclick: sheetRewards },
-        h('div', { class: 'hero-k' }, t('home.earned'), ' ', icon('info', 12)), h('div', { class: 'hero-v' }, `+${nim(earned())}`)),
+        h('div', { class: 'hero-k' }, t('home.earned'), ' ', icon('info', 12)), h('div', { class: 'hero-v', 'data-rig': 'earned-v' }, earnedLabel())),
       h('div', {}, h('div', { class: 'hero-k' }, t('home.inWallet')), h('div', { class: 'hero-v' }, nim(inWallet))),
       rate ? h('div', {}, h('div', { class: 'hero-k' }, t('home.rate')), h('div', { class: 'hero-v' }, `~${rate}`)) : null),
     pool ? h('div', { class: 'hero-foot' }, t('home.pool', { name: pool.name }),
-      last ? ` · ${t('home.lastReward', { amount: nim(last.luna), date: shortDay(last.at) })}` : R.staker && !earned() ? ` · ${t('home.noReward')}` : '') : null);
+      last ? ` · ${t('home.lastReward', { amount: nim(last.luna), date: shortDay(last.at) })}` : R.staker && R.proven?.earned === 0 ? ` · ${t('home.noReward')}` : '') : null);
 }
 
 const notedInWallet = () => openGoals().reduce((sum, g) => sum + G.parts(g).wallet, 0);
@@ -702,7 +747,7 @@ function footer() {
 /* ---------- screens ---------- */
 
 function viewWelcome() {
-  const rate = rateText();
+  const rate = rateText(null); // before pool fees: no pool is chosen yet
   const point = (name, title, body) => h('li', {}, h('div', { class: 'wp-i' }, icon(name, 20)), h('div', {}, h('b', {}, title), h('p', { class: 'small mute' }, body)));
   let busy = false;
   const go = async (e) => {
@@ -798,7 +843,7 @@ function viewGoal(goal) {
     spentCard(goal, prog),
     h('div', { class: 'split' },
       h('div', { class: 'tile' }, h('div', { class: 'tile-k' }, t('goal.inStake')), h('div', { class: 'tile-v' }, nim(prog.stake))),
-      h('button', { class: 'tile tile-btn', 'data-rig': 'goal-earned', onclick: sheetRewards }, h('div', { class: 'tile-k' }, t('goal.earned'), ' ', icon('info', 12)), h('div', { class: 'tile-v good' }, `+${nim(prog.earned)}`)),
+      h('button', { class: 'tile tile-btn', 'data-rig': 'goal-earned', onclick: sheetRewards }, h('div', { class: 'tile-k' }, t('goal.earned'), ' ', icon('info', 12)), h('div', { class: 'tile-v good', 'data-rig': 'goal-earned-v' }, Number.isSafeInteger(R.proven?.earned) ? `+${nim(prog.earned)}` : earnedLabel())),
       h('div', { class: 'tile' }, h('div', { class: 'tile-k' }, t('goal.inWallet')), h('div', { class: 'tile-v' }, nim(prog.wallet))),
       h('div', { class: 'tile' }, h('div', { class: 'tile-k' }, t('goal.gifts')), h('div', { class: 'tile-v' }, nim(prog.gifts)))),
     stakeable ? h('button', { class: 'card notice gold', 'data-rig': 'stake-wallet', onclick: () => sheetSave(goal, { includeWallet: true }) },
@@ -948,12 +993,12 @@ function entryRow(e) {
 
 function viewHow() {
   const start = R.height ? S.releaseIfStartedAt(R.height, R.network) : null;
-  const rate = rateText();
+  const rate = rateLine();
   const blk = (title, ...paras) => h('section', { class: 'card' }, h('h3', {}, title), paras.filter(Boolean).map((p) => h('p', { class: 'small' }, p)));
   return chrome(h('main', {},
     blk(t('how.q1'), t('how.a1')),
     blk(t('how.q2'), t('how.a2'), start ? t('how.a2live', { time: hours(start - R.height), date: when(Date.now() + S.blocksToMs(start - R.height)) }) : null),
-    blk(t('how.q3'), t('how.a3'), rate ? t('how.a3rate', { rate }) : null),
+    blk(t('how.q3'), t('how.a3'), rate),
     blk(t('how.q4'), t('how.a4')),
     blk(t('how.q5'), t('how.a5')),
     blk(t('how.q6'), t('how.a6')),
@@ -1272,22 +1317,25 @@ function sheetShare(goal) {
 /** How rewards reach the stake, and what Kuza has seen arrive. Everything here is read from the chain or this phone. */
 function sheetRewards() {
   const pool = poolOf(R.staker?.delegation);
-  const rate = rateText(pool?.fee ?? 0.05);
+  const rate = rateLine();
   const events = [...(st.rewards?.events || [])].reverse();
-  const total = earned();
+  const proven = R.proven?.earned;
+  const total = Number.isSafeInteger(proven) ? proven : 0;
   openSheet(t('rw.title'), h('div', { class: 'form', 'data-rig': 'rewards-sheet' },
-    h('div', { class: 'rw-total' }, h('div', { class: 'tiny mute' }, t('rw.total')), amountBlock(total)),
+    h('div', { class: 'rw-total', 'data-rig': 'rw-total' }, h('div', { class: 'tiny mute' }, t('rw.total')),
+      Number.isSafeInteger(proven) ? amountBlock(total) : h('div', { class: 'num-unknown' }, earnedLabel())),
+    proven === null ? h('p', { class: 'small warn', 'data-rig': 'rw-unknown' }, t('rw.unknown')) : null,
     events.length
       ? h('section', {}, h('h3', {}, t('rw.seen')), events.slice(0, 8).map((e) => h('div', { class: 'entry' },
         h('div', {}, h('div', { class: 'small' }, t('rw.event')), h('div', { class: 'tiny mute' }, when(e.at))),
         h('div', { class: 'entry-v good' }, `+${nim(e.luna)}`))))
-      : h('p', { class: 'small', 'data-rig': 'rw-none' }, !R.staker ? t('rw.noStake') : total > 0 ? t('rw.earlier') : t('rw.none')),
+      : proven === null ? null : h('p', { class: 'small', 'data-rig': 'rw-none' }, !R.staker ? t('rw.noStake') : total > 0 ? t('rw.earlier') : t('rw.none')),
     pool ? h('div', { class: 'route' },
       h('p', { class: 'small' }, h('b', {}, pool.name), ' · ', pool.fee !== null ? t('pool.fee', { fee: fmtPct(pool.fee) }) : ''),
       h('p', { class: 'tiny mute' }, pool.schedule ? t('rw.schedule', { schedule: pool.schedule }) : t('rw.scheduleOwn'))) : null,
     h('p', { class: 'small' }, t('rw.how1')),
     h('p', { class: 'small' }, t('rw.how2')),
-    rate ? h('p', { class: 'tiny mute' }, t('how.a3rate', { rate })) : null,
+    rate ? h('p', { class: 'tiny mute', 'data-rig': 'rw-rate' }, rate) : null,
     st.rewards?.since ? h('p', { class: 'tiny mute' }, t('rw.since', { date: day(st.rewards.since) })) : null,
     h('button', { class: 'btn wide', onclick: () => closeSheet() }, t('common.ok'))));
 }
@@ -1830,7 +1878,7 @@ function render() {
  * once. Goals from before marks existed start from where they stand, so nothing old is celebrated as new.
  */
 function checkMarks() {
-  if (R.jar || !st.address || R.staker === undefined) return; // wait for the stake, or rewards would look like new progress
+  if (R.jar || !st.address || R.staker === undefined || R.proven === undefined) return; // wait for stake and proof, or rewards would look like new progress
   let changed = false;
   for (const goal of openGoals()) {
     const ratio = goalProgress(goal).ratio;

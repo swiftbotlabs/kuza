@@ -95,11 +95,15 @@ export function earnedTotal(stakerTotal, baseline, goals) {
   return Math.max(0, (stakerTotal || 0) - (baseline || 0) - totalPrincipal(goals) - pendingStake(goals));
 }
 
-/** Rewards shared out by each open goal's stake. */
-export function earnedShare(goal, goals, earned) {
+/**
+ * Rewards shared out by stake. `principal` is what the chain says went into the stake in all (deposits less
+ * withdrawals): stake that isn't in any goal earns its share too, so a goal never gets more than its own part.
+ */
+export function earnedShare(goal, goals, earned, principal = 0) {
   const open = goals.filter((g) => !g.closedAt);
-  const all = open.reduce((sum, g) => sum + parts(g).stake, 0);
-  if (!all || goal.closedAt) return 0;
+  const inGoals = open.reduce((sum, g) => sum + parts(g).stake, 0);
+  const all = Math.max(inGoals, Number.isSafeInteger(principal) ? principal : 0);
+  if (!all || goal.closedAt || !(earned > 0)) return 0;
   return Math.floor(earned * (parts(goal).stake / all));
 }
 

@@ -1,0 +1,350 @@
+{
+ "source": "rpc.nimiqwatch.com getTransactionsByAddress, read 2026-11-06; public mainnet data of our own test wallet",
+ "staker": {
+  "address": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+  "balance": 110000000,
+  "delegation": "NQ08 RS08 LTKL 62QL B954 S9YP 0G3R XVKM RU2Y",
+  "inactiveBalance": 0,
+  "inactiveFrom": null,
+  "retiredBalance": 0
+ },
+ "history": {
+  "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM": [
+   {
+    "hash": "0477aebdef7b1388c91de3cf18ac6b7d95c00d3a26fd4d21c251d649bf92bc01",
+    "blockNumber": 65924353,
+    "timestamp": 1793712548150,
+    "from": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "fromType": 0,
+    "to": "NQ32 0DSN YTSU G7MP QD91 1BC9 NVFG 2NL8 BJ9F",
+    "toType": 2,
+    "value": 600000000,
+    "senderData": "",
+    "recipientData": "4b21e843f1136d469d54562157c788d48bc436753c66c60c15f26d25732d737504a225e7819e3b0b01000000000000000000000000000000000000000000000000000000000000000001000001a1e9b25537",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 0DSN YTSU G7MP QD91 1BC9 NVFG 2NL8 BJ9F",
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM"
+    ]
+   },
+   {
+    "hash": "a55747c63ebbbf78084010c6d93950ac4e5593f6a62b4ff179cbc9be26010cec",
+    "blockNumber": 65924341,
+    "timestamp": 1793712536228,
+    "from": "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX",
+    "fromType": 2,
+    "to": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "toType": 0,
+    "value": 594000000,
+    "senderData": "",
+    "recipientData": "",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX"
+    ]
+   },
+   {
+    "hash": "fbd6cde2ef9834146a0ec0e608cdab924982819549c9658f8e115e0babe58eb2",
+    "blockNumber": 65924337,
+    "timestamp": 1793712532151,
+    "from": "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+    "fromType": 3,
+    "to": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "toType": 0,
+    "value": 6000000,
+    "senderData": "01",
+    "recipientData": "",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM"
+    ]
+   },
+   {
+    "hash": "8dc542a06d53265d8ca0071d51770384d544a49be694adca6a409fd1202fa4f6",
+    "blockNumber": 65872502,
+    "timestamp": 1793660916353,
+    "from": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "fromType": 0,
+    "to": "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX",
+    "toType": 2,
+    "value": 604000000,
+    "senderData": "",
+    "recipientData": "4b21e843f1136d469d54562157c788d48bc436753c66c60c15f26d25732d737504a225e7819e3b0b01000000000000000000000000000000000000000000000000000000000000000001000001a1e69e8150",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX"
+    ]
+   },
+   {
+    "hash": "aa8983f28634e92775f70a07d18dfdefc4edb3f8591aeafc68a704a4fdc368dd",
+    "blockNumber": 65872491,
+    "timestamp": 1793660905353,
+    "from": "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5",
+    "fromType": 2,
+    "to": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "toType": 0,
+    "value": 594000000,
+    "senderData": "",
+    "recipientData": "",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5"
+    ]
+   },
+   {
+    "hash": "6a449594631de6e0ca7ba6e88409ae82b36c0db66ffa1a93726c3179f6336b50",
+    "blockNumber": 65872372,
+    "timestamp": 1793660786352,
+    "from": "NQ80 UUAS BU0Q 6Q5B 17C7 E245 DNST 92Q1 65NG",
+    "fromType": 2,
+    "to": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "toType": 0,
+    "value": 10000000,
+    "senderData": "",
+    "recipientData": "4b5a317c3634727535397c476f6f64206c75636b2077697468207468652066756e64",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ04 HH5C HSLU VHGD EP4G BA1R 1MGB PT0X EY9V",
+     "NQ80 UUAS BU0Q 6Q5B 17C7 E245 DNST 92Q1 65NG"
+    ]
+   },
+   {
+    "hash": "92868768b57f2d2eecc46cbf979d7ce3f9d7014fc07d356b2465dc25580f2d70",
+    "blockNumber": 65870243,
+    "timestamp": 1793658667582,
+    "from": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "fromType": 0,
+    "to": "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5",
+    "toType": 2,
+    "value": 700000000,
+    "senderData": "",
+    "recipientData": "4b21e843f1136d469d54562157c788d48bc436753c66c60c15f26d25732d737504a225e7819e3b0b01000000000000000000000000000000000000000000000000000000000000000001000001a1e67c3199",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5"
+    ]
+   },
+   {
+    "hash": "3bc6d35f8f47b1bb80d70c5c453a0737193472cc7cbdb72c791a32317a62e480",
+    "blockNumber": 65870172,
+    "timestamp": 1793658596582,
+    "from": "NQ58 9P19 NENY SMJG 3MN6 82Y1 6JYM BY2D G5NS",
+    "fromType": 0,
+    "to": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "toType": 0,
+    "value": 700000000,
+    "senderData": "",
+    "recipientData": "",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ58 9P19 NENY SMJG 3MN6 82Y1 6JYM BY2D G5NS"
+    ]
+   }
+  ],
+  "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5": [
+   {
+    "hash": "aa8983f28634e92775f70a07d18dfdefc4edb3f8591aeafc68a704a4fdc368dd",
+    "blockNumber": 65872491,
+    "timestamp": 1793660905353,
+    "from": "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5",
+    "fromType": 2,
+    "to": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "toType": 0,
+    "value": 594000000,
+    "senderData": "",
+    "recipientData": "",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5"
+    ]
+   },
+   {
+    "hash": "0b29e3e1a92eb5b8039f81004a6da78cfa0304fe978159d9cc386c2644c9edda",
+    "blockNumber": 65870706,
+    "timestamp": 1793659129628,
+    "from": "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5",
+    "fromType": 2,
+    "to": "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+    "toType": 3,
+    "value": 0,
+    "senderData": "",
+    "recipientData": "080000000005f5e10000a92f5ca6a7637a9f214e41800391584bbb6a48a866e3abc33d9eeb12c984f5a7007dc5b197afefd105b0b5647b5b808c7790b1a1876e4042eb4e801bce34f76b0ad782994d7fc8d67c7274b62f43d29ebcdc539a9ec16652fd6b3082c1bf7a8b05",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5"
+    ]
+   },
+   {
+    "hash": "200eaaef6344b26195f175436e45dfd9f2cc644f27360c0fb44810a99e528e4b",
+    "blockNumber": 65870509,
+    "timestamp": 1793658932626,
+    "from": "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5",
+    "fromType": 2,
+    "to": "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+    "toType": 3,
+    "value": 6000000,
+    "senderData": "",
+    "recipientData": "064b21e843f1136d469d54562157c788d48bc43675",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5"
+    ]
+   },
+   {
+    "hash": "4154661745fa442c9c4dc3963ca1002de00405d063934b60e3e34e468e5ffc8e",
+    "blockNumber": 65870430,
+    "timestamp": 1793658853627,
+    "from": "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5",
+    "fromType": 2,
+    "to": "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+    "toType": 3,
+    "value": 100000000,
+    "senderData": "",
+    "recipientData": "0501ce808a6e7430b145a4a4d27f704079f7675cf05f00a92f5ca6a7637a9f214e41800391584bbb6a48a866e3abc33d9eeb12c984f5a7009a9872381866c2432882d05bc964c161b8b6e048bacb295360452ab32a372fc72234162a4a5d866ea147b48158e8ef5c10ea97684b5e9d32d669f539795b4605",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5",
+     "NQ08 RS08 LTKL 62QL B954 S9YP 0G3R XVKM RU2Y"
+    ]
+   },
+   {
+    "hash": "92868768b57f2d2eecc46cbf979d7ce3f9d7014fc07d356b2465dc25580f2d70",
+    "blockNumber": 65870243,
+    "timestamp": 1793658667582,
+    "from": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "fromType": 0,
+    "to": "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5",
+    "toType": 2,
+    "value": 700000000,
+    "senderData": "",
+    "recipientData": "4b21e843f1136d469d54562157c788d48bc436753c66c60c15f26d25732d737504a225e7819e3b0b01000000000000000000000000000000000000000000000000000000000000000001000001a1e67c3199",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ43 MS6V QJLN 7GXB VSUA GHLK UVB5 YJ9K D4B5"
+    ]
+   }
+  ],
+  "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX": [
+   {
+    "hash": "a55747c63ebbbf78084010c6d93950ac4e5593f6a62b4ff179cbc9be26010cec",
+    "blockNumber": 65924341,
+    "timestamp": 1793712536228,
+    "from": "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX",
+    "fromType": 2,
+    "to": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "toType": 0,
+    "value": 594000000,
+    "senderData": "",
+    "recipientData": "",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX"
+    ]
+   },
+   {
+    "hash": "0386938fbc602dea0fcfe92332731a8b0d197c5588ba66f30c90fe5a896d3768",
+    "blockNumber": 65924317,
+    "timestamp": 1793712512151,
+    "from": "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX",
+    "fromType": 2,
+    "to": "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+    "toType": 3,
+    "value": 0,
+    "senderData": "",
+    "recipientData": "0900000000005b8d8000a92f5ca6a7637a9f214e41800391584bbb6a48a866e3abc33d9eeb12c984f5a700623f820934df968082e472ac89b156bb4c5291f1de15b270d4b5086e2f041fa02043690e3ef1475a4f2de2c46a65e0e7828b71e64b9f1e9072f539920559d300",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX"
+    ]
+   },
+   {
+    "hash": "f196139159689150dd50ef37cee031f53bc66e7c16220e7db5fc5351139a9140",
+    "blockNumber": 65872612,
+    "timestamp": 1793661026351,
+    "from": "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX",
+    "fromType": 2,
+    "to": "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+    "toType": 3,
+    "value": 10000000,
+    "senderData": "",
+    "recipientData": "064b21e843f1136d469d54562157c788d48bc43675",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ77 0000 0000 0000 0000 0000 0000 0000 0001",
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX"
+    ]
+   },
+   {
+    "hash": "8dc542a06d53265d8ca0071d51770384d544a49be694adca6a409fd1202fa4f6",
+    "blockNumber": 65872502,
+    "timestamp": 1793660916353,
+    "from": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "fromType": 0,
+    "to": "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX",
+    "toType": 2,
+    "value": 604000000,
+    "senderData": "",
+    "recipientData": "4b21e843f1136d469d54562157c788d48bc436753c66c60c15f26d25732d737504a225e7819e3b0b01000000000000000000000000000000000000000000000000000000000000000001000001a1e69e8150",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+     "NQ50 MM2Y 74UL HF5V 3P36 D9FP 4TBQ 975R TRCX"
+    ]
+   }
+  ],
+  "NQ32 0DSN YTSU G7MP QD91 1BC9 NVFG 2NL8 BJ9F": [
+   {
+    "hash": "0477aebdef7b1388c91de3cf18ac6b7d95c00d3a26fd4d21c251d649bf92bc01",
+    "blockNumber": 65924353,
+    "timestamp": 1793712548150,
+    "from": "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM",
+    "fromType": 0,
+    "to": "NQ32 0DSN YTSU G7MP QD91 1BC9 NVFG 2NL8 BJ9F",
+    "toType": 2,
+    "value": 600000000,
+    "senderData": "",
+    "recipientData": "4b21e843f1136d469d54562157c788d48bc436753c66c60c15f26d25732d737504a225e7819e3b0b01000000000000000000000000000000000000000000000000000000000000000001000001a1e9b25537",
+    "executionResult": true,
+    "relatedAddresses": [
+     "NQ32 0DSN YTSU G7MP QD91 1BC9 NVFG 2NL8 BJ9F",
+     "NQ32 7HKC C30M X9NJ AURD EDSG 98H5 UX0R UEQB",
+     "NQ32 9CGX GGYH 2DNL D7AL AQGM FHU8 SJ5U 8DKM"
+    ]
+   }
+  ]
+ }
+}

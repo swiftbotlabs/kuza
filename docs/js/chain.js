@@ -96,6 +96,53 @@ export async function getHistory(address, max = 100) {
   return Array.isArray(list) ? list : [];
 }
 
+const PAGE = 500;
+const MAX_PAGES = 4;
+const MAX_ACCOUNTS = 60;
+
+/** Every transaction of an address, newest first, or a throw when it can't be read completely. */
+export async function fullHistory(address) {
+  const out = [];
+  const seen = new Set();
+  let startAt = null;
+  for (let p = 0; p < MAX_PAGES; p++) {
+    const page = await call('getTransactionsByAddress', [address, PAGE, startAt], { timeout: 12000 });
+    if (!Array.isArray(page)) throw new RpcError('bad history');
+    let fresh = 0;
+    for (const tx of page) {
+      if (tx && typeof tx.hash === 'string' && !seen.has(tx.hash)) { seen.add(tx.hash); out.push(tx); fresh++; }
+    }
+    if (page.length < PAGE) return out;
+    if (!fresh) break;
+    startAt = page[page.length - 1].hash;
+  }
+  throw new RpcError('history too long to read completely');
+}
+
+/**
+ * The history behind a staker: the wallet address and every payment account (HTLC) it funded, plus the accounts the
+ * wallet lists now. Nimiq Pay pays, and stakes, from those payment accounts. Throws if any part can't be read.
+ * `cache` keeps the histories of old payment accounts, which see no new transactions once replaced.
+ */
+export async function walletStakeHistory(owner, accounts = [], cache = new Map()) {
+  const own = await fullHistory(owner);
+  const others = new Set(accounts.filter((a) => a && a !== owner));
+  for (const tx of own) if (tx && tx.from === owner && tx.toType === 2 && typeof tx.to === 'string') others.add(tx.to);
+  if (others.size > MAX_ACCOUNTS) throw new RpcError('too many accounts to read');
+  const lists = [own];
+  const todo = [...others];
+  for (let i = 0; i < todo.length; i += 4) {
+    lists.push(...await Promise.all(todo.slice(i, i + 4).map(async (a) => {
+      if (cache.has(a)) return cache.get(a);
+      const list = await fullHistory(a);
+      const latest = Math.max(0, ...list.map((tx) => Number(tx.timestamp) || 0));
+      if (!accounts.includes(a) && Date.now() - latest > 3600e3) cache.set(a, list);
+      return list;
+    })));
+  }
+  return lists.flat();
+}
+
 /** 'basic', 'htlc', 'staking' and so on. Null if the node doesn't say. */
 export async function getAccountType(address) {
   const account = await call('getAccountByAddress', [address]);

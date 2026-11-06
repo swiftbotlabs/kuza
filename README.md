@@ -27,8 +27,10 @@ page with a demo that uses pretend NIM.)
   spare (a little is kept for fees). You can change it before you approve.
 - **Progress:** your stake and what it earned are read from the chain. Streaks, set-aside notes and how stake is split
   between goals are kept on your phone.
-- **Rewards:** Earned is your stake on the chain minus what you put in. Each payout that raises it is listed with the day
-  this phone first saw it, next to your pool, its fee and how it pays out.
+- **Rewards:** Earned is only what the chain proves: your stake minus every deposit into it from your wallet's accounts
+  (the wallet address and each payment account it funded), plus what you took out. If that history can't be read
+  completely, Kuza shows "not known yet" instead of a number. Each payout is listed with the day this phone first saw it,
+  next to your pool, its real fee and how it pays out.
 - **Reaching a goal:** a celebration, then three ways on: start the next goal (its stake can count toward the new one,
   with no transaction, because the NIM stays where it is), use the money, or raise the target and keep it growing.
 - **Using the money:** the real unstaking path and wait, then pay any Bitcoin Lightning invoice from your wallet. Kuza

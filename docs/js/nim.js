@@ -67,6 +67,19 @@ export function normalizeAddress(input) {
   return s.replace(/(.{4})/g, '$1 ').trim();
 }
 
+const B32 = '0123456789ABCDEFGHJKLMNPQRSTUVXY';
+
+/** The 20 bytes behind a valid user-friendly address, as lowercase hex (how staking data names a staker), or null. */
+export function addressHex(address) {
+  const norm = normalizeAddress(address);
+  if (!norm) return null;
+  let bits = '';
+  for (const ch of norm.replace(/\s/g, '').slice(4)) bits += B32.indexOf(ch).toString(2).padStart(5, '0');
+  let hex = '';
+  for (let i = 0; i < 160; i += 4) hex += parseInt(bits.slice(i, i + 4), 2).toString(16);
+  return hex;
+}
+
 export function shortAddress(address) {
   if (!address) return '';
   const s = address.replace(/\s/g, '');
