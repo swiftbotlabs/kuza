@@ -19,12 +19,20 @@ export function classifyError(err) {
   const code = err?.code;
   if (type === 'PERMISSION_DENIED' || code === 4001) return 'cancel';
   if (type === 'TRANSACTION_OUTCOME_UNKNOWN' || code === -32001) return 'unknown';
+  if (type === 'DUPLICATE_PAYMENT') return 'duplicate'; // a Lightning invoice this wallet already paid or is paying
   if (type === 'NETWORK_ERROR' || code === -32000) return 'network';
   if (type === 'INVALID_TRANSACTION' || type === 'INVALID_REQUEST' || code === -32602) return 'invalid';
   if (type === 'UNKNOWN_REQUEST' || code === 4200) return 'unsupported';
   if (/still pending|already in progress/i.test(err?.message || '')) return 'busy';
   if (/timed? ?out/i.test(err?.message || '')) return 'unknown'; // the wallet may still act on it
   return 'other';
+}
+
+/** The wallet's answer to the accounts it knows about changing (a new payment account). Older hosts have no events. */
+export function onAccountsChanged(fn) {
+  try {
+    provider?.on?.('accountsChanged', fn);
+  } catch { /* no events on this host */ }
 }
 
 export function errorHash(err) {

@@ -6,16 +6,22 @@
 //   stake     a confirmed staking transaction; fromWallet says how much came out of the wallet part
 //   assign    stake that already existed and now counts toward this goal, no transaction
 //   withdraw  a confirmed removal from stake back to the wallet
+//   move      stake handed on to another goal (that goal books it as assign), no transaction
+//   spend     a payment made from the wallet after the goal was taken out; shown in the history, counts toward nothing
 // status is pending, ok or failed. Only ok counts.
+//
+// A goal can have a plan: `weekly` Luna every `every` ('week' or 'month'). The field keeps its old name so goals saved
+// before monthly plans existed still read the same.
 
 const WEEK = 7 * 24 * 3600 * 1000;
 const NAME_MAX = 40;
 const MAX_GIFTS = 500;
-const KINDS = new Set(['aside', 'gift', 'stake', 'assign', 'withdraw']);
+const KINDS = new Set(['aside', 'gift', 'stake', 'assign', 'withdraw', 'move', 'spend']);
+export const MARKS = [25, 50, 75, 100];
 const STATUSES = new Set(['ok', 'pending', 'failed']);
 
-export function newGoal({ id, name, target, date, weekly, icon, now }) {
-  return { id, name: String(name).slice(0, NAME_MAX), target, date: date || null, weekly: weekly || 0, icon: icon || 'seed', createdAt: now, entries: [], closedAt: null };
+export function newGoal({ id, name, target, date, weekly, every, icon, now }) {
+  return { id, name: String(name).slice(0, NAME_MAX), target, date: date || null, weekly: weekly || 0, every: every === 'month' ? 'month' : 'week', icon: icon || 'seed', createdAt: now, entries: [], closedAt: null, marks: [], reachedAt: null };
 }
 
 export function weeksUntil(date, now) {
@@ -31,7 +37,27 @@ export function suggestWeekly(target, date, now, already = 0) {
   return Math.ceil(Math.max(0, target - already) / weeks);
 }
 
+/** Whole months from now to the end of the date, at least 1; 0 without a date or once it has passed. */
+export function monthsUntil(date, now) {
+  if (!date) return 0;
+  const end = Date.parse(date + 'T23:59:59Z');
+  if (Number.isNaN(end) || end <= now) return 0;
+  const a = new Date(now);
+  const b = new Date(end);
+  let months = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+  if (b.getUTCDate() > a.getUTCDate()) months++;
+  return Math.max(1, months);
+}
+
+/** What to put in each period to reach the target by the date. */
+export function suggestPlan(target, date, now, every = 'week', already = 0) {
+  const periods = every === 'month' ? monthsUntil(date, now) : weeksUntil(date, now);
+  if (!periods) return { amount: 0, periods: 0 };
+  return { amount: Math.ceil(Math.max(0, target - already) / periods), periods };
+}
+
 const counted = (goal) => goal.entries.filter((e) => e.status === 'ok');
+const monthly = (goal) => goal.every === 'month';
 
 export function parts(goal) {
   let stake = 0;
@@ -44,6 +70,7 @@ export function parts(goal) {
       case 'stake': stake += e.luna; wallet -= e.fromWallet || 0; break;
       case 'assign': stake += e.luna; break;
       case 'withdraw': stake -= e.luna; break;
+      case 'move': stake -= e.luna; break;
       default: break;
     }
   }
@@ -82,17 +109,36 @@ export function progress(goal, earnedPart = 0) {
   return { ...p, earned: earnedPart, saved, ratio: goal.target ? Math.min(1, saved / goal.target) : 0, left: Math.max(0, goal.target - saved) };
 }
 
-/** Plan weeks run from the goal's creation. Week 0 is the first week. */
-export function planWeek(goal, t) {
-  return Math.floor((t - goal.createdAt) / WEEK);
+/** When plan period i starts. Weeks run from the goal's creation; months keep its day of the month (31 -> 30, 28...). */
+export function periodStart(goal, i) {
+  if (!monthly(goal)) return goal.createdAt + i * WEEK;
+  const c = new Date(goal.createdAt);
+  const y = c.getUTCFullYear();
+  const m = c.getUTCMonth() + i;
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return Date.UTC(y, m, Math.min(c.getUTCDate(), last), c.getUTCHours(), c.getUTCMinutes(), c.getUTCSeconds(), c.getUTCMilliseconds());
 }
+
+/** Which plan period a moment falls in. Period 0 is the first. */
+export function planPeriod(goal, t) {
+  if (!monthly(goal)) return Math.floor((t - goal.createdAt) / WEEK);
+  const c = new Date(goal.createdAt);
+  const d = new Date(t);
+  let i = (d.getUTCFullYear() - c.getUTCFullYear()) * 12 + (d.getUTCMonth() - c.getUTCMonth());
+  while (i > -1200 && t < periodStart(goal, i)) i--;
+  while (i < 12000 && t >= periodStart(goal, i + 1)) i++;
+  return i;
+}
+
+/** Kept for older callers: the plan period of a weekly goal. */
+export const planWeek = planPeriod;
 
 function savedByWeek(goal) {
   const by = new Map();
   for (const e of counted(goal)) {
     if (!['aside', 'stake', 'gift'].includes(e.kind)) continue;
     if (e.kind === 'stake' && e.fromWallet >= e.luna) continue; // moved, not new money
-    const w = planWeek(goal, e.at);
+    const w = planPeriod(goal, e.at);
     by.set(w, (by.get(w) || 0) + e.luna - (e.fromWallet || 0));
   }
   return by;
@@ -102,7 +148,7 @@ function savedByWeek(goal) {
 export function streak(goal, now) {
   if (!goal.weekly) return 0;
   const by = savedByWeek(goal);
-  const current = planWeek(goal, now);
+  const current = planPeriod(goal, now);
   let count = (by.get(current) || 0) >= goal.weekly ? 1 : 0;
   for (let w = current - 1; w >= 0; w--) {
     if ((by.get(w) || 0) >= goal.weekly) count++;
@@ -114,17 +160,68 @@ export function streak(goal, now) {
 /** The weekly reminder: is this week's amount still open, and when does the week end? */
 export function dueNow(goal, now) {
   if (!goal.weekly || goal.closedAt) return null;
-  const w = planWeek(goal, now);
+  const w = planPeriod(goal, now);
   const saved = savedByWeek(goal).get(w) || 0;
   const left = goal.weekly - saved;
   if (left <= 0) return null;
-  return { left, endsAt: goal.createdAt + (w + 1) * WEEK };
+  return { left, endsAt: periodStart(goal, w + 1) };
+}
+
+/**
+ * The next saving the plan asks for: what's still open this period and when the period ends, or, once this period is
+ * met, the full amount for the next one. Null without a plan.
+ */
+export function nextSave(goal, now) {
+  if (!goal.weekly || goal.closedAt) return null;
+  const due = dueNow(goal, now);
+  if (due) return { amount: due.left, by: due.endsAt, done: false };
+  const w = planPeriod(goal, now);
+  return { amount: goal.weekly, from: periodStart(goal, w + 1), by: periodStart(goal, w + 2), done: true };
+}
+
+/**
+ * When the goal is reached if the plan is kept from now on: this period's open part, then one plan amount per period.
+ * Rewards and gifts would only make it sooner, so they're left out. Null without a plan or once reached.
+ */
+export function projectFinish(goal, left, now) {
+  if (!goal.weekly || !(left > 0)) return null;
+  const w = planPeriod(goal, now);
+  const due = dueNow(goal, now);
+  const rest = left - (due ? Math.min(due.left, left) : 0);
+  const more = rest > 0 ? Math.ceil(rest / goal.weekly) : 0;
+  return { at: periodStart(goal, w + 1 + more), periods: more + (due ? 1 : 0) };
+}
+
+/**
+ * On plan, ahead or behind. With a date it's the straight line from the start to the date; without one it's the plan
+ * amount for every period that has ended. Null when there's nothing to compare yet.
+ */
+export function planStatus(goal, saved, now) {
+  const line = onTrack(goal, saved, now);
+  if (line) return { ...line, by: 'date' };
+  if (!goal.weekly) return null;
+  const ended = planPeriod(goal, now);
+  if (ended < 1) return null;
+  const expected = goal.weekly * ended;
+  return { expected, delta: saved - expected, ok: saved >= expected, by: 'plan' };
+}
+
+/** The highest 25/50/75/100% mark this goal has passed and not yet celebrated, or 0. Goals from before marks: 0. */
+export function newMark(goal, ratio) {
+  if (!Array.isArray(goal.marks)) return 0;
+  const fresh = MARKS.filter((m) => ratio * 100 >= m && !goal.marks.includes(m));
+  return fresh.length ? fresh[fresh.length - 1] : 0;
+}
+
+/** Marks already passed, for goals saved before marks existed: they start from where they are, without a party. */
+export function passedMarks(ratio) {
+  return MARKS.filter((m) => ratio * 100 >= m);
 }
 
 /** Last n plan weeks, oldest first, for the streak strip. */
 export function weekStrip(goal, now, n = 8) {
   const by = savedByWeek(goal);
-  const current = planWeek(goal, now);
+  const current = planPeriod(goal, now);
   const out = [];
   for (let w = Math.max(0, current - n + 1); w <= current; w++) {
     const amount = by.get(w) || 0;
@@ -164,12 +261,14 @@ function cleanEntry(e) {
   if (Number.isSafeInteger(e.block)) out.block = e.block;
   if (typeof e.from === 'string') out.from = e.from.slice(0, 64);
   if (typeof e.note === 'string') out.note = e.note.slice(0, 60);
+  if (typeof e.ref === 'string') out.ref = e.ref.slice(0, NAME_MAX);
+  if (Number.isFinite(e.sats) && e.sats > 0 && e.sats <= 21e14) out.sats = e.sats;
   return out;
 }
 
 /** Validate a stored state blob; drop anything that doesn't look right. */
 export function sanitizeState(raw) {
-  const out = { v: 1, address: null, baseline: null, goals: [], validator: null, seen: false, noCount: false, lang: null, op: null, unstake: null };
+  const out = { v: 1, address: null, accounts: [], baseline: null, goals: [], validator: null, seen: false, noCount: false, lang: null, op: null, unstake: null, rewards: null };
   if (!raw || typeof raw !== 'object' || raw.v !== 1) return out;
   if (typeof raw.address === 'string') out.address = raw.address;
   if (Number.isSafeInteger(raw.baseline) && raw.baseline >= 0) out.baseline = raw.baseline;
@@ -182,10 +281,22 @@ export function sanitizeState(raw) {
     if (Number.isSafeInteger(raw.unstake.removing)) out.unstake.removing = raw.unstake.removing;
   }
   out.noCount = raw.noCount === true;
+  if (Array.isArray(raw.accounts)) out.accounts = raw.accounts.filter((a) => typeof a === 'string' && a.length <= 64).slice(0, 4);
+  if (raw.rewards && typeof raw.rewards === 'object' && Number.isSafeInteger(raw.rewards.last) && raw.rewards.last >= 0) {
+    const events = Array.isArray(raw.rewards.events) ? raw.rewards.events : [];
+    out.rewards = {
+      last: raw.rewards.last,
+      since: Number.isFinite(raw.rewards.since) ? raw.rewards.since : 0,
+      events: events.filter((e) => e && Number.isSafeInteger(e.luna) && e.luna > 0 && Number.isFinite(e.at)).map((e) => ({ at: e.at, luna: e.luna })).slice(-60),
+    };
+  }
   if (Array.isArray(raw.goals)) {
     for (const g of raw.goals.slice(0, 50)) {
       if (!g || typeof g.id !== 'string' || typeof g.name !== 'string' || !Number.isSafeInteger(g.target) || !Array.isArray(g.entries)) continue;
-      out.goals.push({ id: g.id, name: g.name.slice(0, NAME_MAX), target: g.target, date: typeof g.date === 'string' && !Number.isNaN(Date.parse(`${g.date}T12:00:00Z`)) ? g.date : null, weekly: Number.isSafeInteger(g.weekly) ? g.weekly : 0, icon: typeof g.icon === 'string' ? g.icon : 'seed', createdAt: Number.isFinite(g.createdAt) ? g.createdAt : 0, closedAt: Number.isFinite(g.closedAt) ? g.closedAt : null, entries: g.entries.map(cleanEntry).filter(Boolean).slice(-2000) });
+      const goal = { id: g.id, name: g.name.slice(0, NAME_MAX), target: g.target, date: typeof g.date === 'string' && !Number.isNaN(Date.parse(`${g.date}T12:00:00Z`)) ? g.date : null, weekly: Number.isSafeInteger(g.weekly) && g.weekly >= 0 ? g.weekly : 0, every: g.every === 'month' ? 'month' : 'week', icon: typeof g.icon === 'string' ? g.icon : 'seed', createdAt: Number.isFinite(g.createdAt) ? g.createdAt : 0, closedAt: Number.isFinite(g.closedAt) ? g.closedAt : null, reachedAt: Number.isFinite(g.reachedAt) ? g.reachedAt : null, sharedAt: Number.isFinite(g.sharedAt) ? g.sharedAt : null, entries: g.entries.map(cleanEntry).filter(Boolean).slice(-2000) };
+      // Goals saved before marks existed have none: the app fills them in from where the goal stands, without a party.
+      if (Array.isArray(g.marks)) goal.marks = g.marks.filter((m) => MARKS.includes(m));
+      out.goals.push(goal);
     }
   }
   return out;

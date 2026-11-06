@@ -283,7 +283,7 @@ async function main() {
     await t.waitText('Your invite link');
     await t.shot(`${OUT}/07-share.png`);
     const link = await t.eval(`document.querySelector('[data-rig=share-link]').value`);
-    check('share: link is on the public URL', link.startsWith('https://kuza.swiftbotlab.workers.dev/?jar='));
+    check('share: short link on the public URL', link.startsWith('https://kuza.swiftbotlab.workers.dev/?j=m') && link.length <= 150);
     await t.click('[data-rig=sheet-close]');
 
     // Break the goal: dust rule first.
@@ -329,6 +329,9 @@ async function main() {
     await sleep(500);
     await t.waitText('Withdrawn');
     await t.shot(`${OUT}/10-after-break.png`);
+    check('after taking it all out: spend it or mark the goal done', await t.eval(`(() => { const c = document.querySelector('[data-rig=spend-card]'); return !!c && !!c.querySelector('[data-rig=spend-pay]') && !!c.querySelector('[data-rig=spend-done]'); })()`));
+    await t.eval(`document.querySelector('[data-rig=spend-card]').scrollIntoView({ block: 'center' })`);
+    await t.shot(`${OUT}/10a-spend-card.png`);
 
     // A stale view must not send create-staker to a wallet that already has a stake.
     await t.go(`${base}?demo=1&lang=en`);
@@ -412,8 +415,8 @@ async function main() {
     await sleep(500);
     check('jar: bad link falls back, not blank', (await t.text()).length > 40);
     await t.eval('localStorage.clear()');
-    const jar = link.split('jar=')[1];
-    await t.go(`${base}?demo=1&lang=en&jar=${jar}`);
+    const jar = new URL(link).searchParams.get('j');
+    await t.go(`${base}?demo=1&lang=en&j=${jar}`);
     await t.waitText('Add to this goal');
     await t.fill('[data-rig=j-amount]', '100');
     await t.fill('[data-rig=j-note]', 'Happy birthday');
@@ -428,8 +431,9 @@ async function main() {
     await t.waitText('Thank you', 8000);
     check('jar: gift sent with memo', (await t.eval(`window.__kuzaDemo.chain.history[0].recipientData.length`)) > 20);
 
-    // A failed gift brings the button back; an unknown outcome keeps it off.
-    await t.go(`${base}?demo=1&lang=en&jar=${jar}`);
+    // A failed gift brings the button back; an unknown outcome keeps it off. An old ?jar= link still opens the same goal.
+    const { decodeInvite, encodeJar } = await import('../../docs/js/jar.js');
+    await t.go(`${base}?demo=1&lang=en&jar=${encodeJar(decodeInvite(jar))}`);
     await t.waitText('Add to this goal');
     await t.fill('[data-rig=j-amount]', '100');
     await t.click('[data-rig=j-send]');

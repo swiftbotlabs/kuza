@@ -50,6 +50,8 @@ const ICONS = {
   clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2',
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 11v5M12 8h.01',
+  bolt: 'M13 2 4.5 13.5H12L11 22l8.5-11.5H12L13 2Z',
+  qr: 'M4 4h6v6H4V4ZM14 4h6v6h-6V4ZM4 14h6v6H4v-6ZM14 14h2.5v2.5H14V14ZM17.5 17.5H20V20h-2.5v-2.5ZM14 19h1.5M19 14v1.5M7 7h.01M17 7h.01M7 17h.01',
 };
 
 export const GOAL_ICONS = ['seed', 'home', 'bike', 'laptop', 'school', 'plane', 'heart', 'gift'];

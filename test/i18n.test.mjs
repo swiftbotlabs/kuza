@@ -8,6 +8,32 @@ const used = new Set();
 for (const m of src.matchAll(/\bt\('([a-zA-Z0-9.]+)'/g)) used.add(m[1]);
 for (const m of src.matchAll(/\btn\('([a-zA-Z0-9.]+)'/g)) { used.add(`${m[1]}_one`); used.add(`${m[1]}_other`); }
 
+// Keys built at run time, like t(`plan.title.${p}`): each prefix lists every value the code can put in.
+const TEMPLATE_VALUES = {
+  'form.suggest.': ['week', 'month'],
+  'plan.doneShort.': ['week', 'month'],
+  'plan.late.': ['week', 'month'],
+  'plan.nextDone.': ['week', 'month'],
+  'plan.stripNote.': ['week', 'month'],
+  'plan.title.': ['week', 'month'],
+  'plan.streak.': ['week', 'month'],
+  'mark.': ['25', '50', '75'],
+  'spend.err.': ['empty', 'long', 'notLightning', 'wrongNet', 'noAmount'],
+};
+const templates = [];
+for (const m of src.matchAll(/\b(tn?)\(`([a-zA-Z0-9.]+)\$\{[^}]+\}([a-zA-Z0-9.]*)`/g)) templates.push({ plural: m[1] === 'tn', pre: m[2], post: m[3] });
+for (const tp of templates) {
+  for (const v of TEMPLATE_VALUES[tp.pre] || []) {
+    const k = tp.pre + v + tp.post;
+    if (tp.plural) { used.add(`${k}_one`); used.add(`${k}_other`); } else used.add(k);
+  }
+}
+
+test('every key built at run time has its values listed', () => {
+  assert.ok(templates.length >= 9, `templates found: ${templates.length}`);
+  for (const tp of templates) assert.ok(TEMPLATE_VALUES[tp.pre], `no values listed for ${tp.pre}`);
+});
+
 test('every key used by the app exists in every language', () => {
   for (const [code, dict] of Object.entries(dictionaries)) {
     const missing = [...used].filter((k) => !(k in dict));

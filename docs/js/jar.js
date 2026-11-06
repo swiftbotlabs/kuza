@@ -51,6 +51,52 @@ export function decodeJar(param) {
   return { id: o.i, name, target: o.t, date: o.d || null, owner, net: o.e === 't' ? 'testnet' : 'mainnet' };
 }
 
+/**
+ * The short form of the same link, used for every new invite: ?j=<net><address>.<id>.<target>.<date>.<name>
+ *   net m or t, the address without spaces (its checksum still checks), the goal id, the target in Luna as base 36,
+ *   the date as YYYYMMDD or empty, the name as base64url UTF-8. About 120 characters in all instead of 200.
+ */
+export function encodeInvite({ id, name, target, date, owner, net }) {
+  const day = date ? date.replace(/-/g, '') : '';
+  return `${net === 'testnet' ? 't' : 'm'}${owner.replace(/\s/g, '')}.${id}.${target.toString(36)}.${day}.${b64urlEncode(cleanText(name, 40))}`;
+}
+
+const INVITE_RE = /^([mt])(NQ[0-9]{2}[0-9A-Z]{32})\.([a-z2-9]{6})\.([0-9a-z]{1,11})\.(\d{8})?\.([A-Za-z0-9_-]{1,216})$/;
+
+/** Parse the ?j= value. Untrusted like the long form: null unless every part checks out. */
+export function decodeInvite(param) {
+  if (typeof param !== 'string' || !param || param.length > 300) return null;
+  const m = INVITE_RE.exec(param);
+  if (!m) return null;
+  const owner = normalizeAddress(m[2]);
+  if (!owner || NOBODY.has(owner)) return null;
+  const target = parseInt(m[4], 36);
+  if (!Number.isSafeInteger(target) || target <= 0 || target > 21e14) return null;
+  let date = null;
+  if (m[5]) {
+    date = `${m[5].slice(0, 4)}-${m[5].slice(4, 6)}-${m[5].slice(6)}`;
+    const back = new Date(`${date}T12:00:00Z`);
+    if (Number.isNaN(back.getTime()) || back.toISOString().slice(0, 10) !== date) return null;
+  }
+  let name;
+  try {
+    name = cleanText(b64urlDecode(m[6]), 40);
+  } catch {
+    return null;
+  }
+  if (!name) return null;
+  return { id: m[3], name, target, date, owner, net: m[1] === 't' ? 'testnet' : 'mainnet' };
+}
+
+/** The goal a page address points at: the short ?j= form first, then the older ?jar= form. */
+export function readInvite(params) {
+  const short = params.get('j');
+  if (short !== null) return { jar: decodeInvite(short), given: true };
+  const long = params.get('jar');
+  if (long !== null) return { jar: decodeJar(long), given: true };
+  return { jar: null, given: false };
+}
+
 /** Public text for the transaction: KZ1|goalid|note, at most 64 bytes. */
 export function buildMemo(id, note) {
   const head = `${MEMO_PREFIX}|${id}|`;

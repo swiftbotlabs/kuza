@@ -18,16 +18,28 @@ page with a demo that uses pretend NIM.)
 
 ## What it does
 
-- **Goals:** a name, a target, a date and a weekly plan.
+- **Goals:** a name, a target, an optional date and a saving plan per week or per month.
+- **Plan:** the next saving and when it's due, on plan or behind (against your date, or against the plan), when the goal
+  lands at this pace, a streak, and a moment at 25, 50 and 75%.
 - **Saving:** a staking transaction that you approve. Under the network's 100 NIM minimum for a new stake, the goal
   fills in your wallet instead and tells you how far you are from being able to stake.
 - **Starting:** NIM already in your wallet shows under your stake, and the first saving fills in what you can
   spare (a little is kept for fees). You can change it before you approve.
 - **Progress:** your stake and what it earned are read from the chain. Streaks, set-aside notes and how stake is split
-  between goals are kept on your phone. There's a weekly reminder in the app.
+  between goals are kept on your phone.
+- **Rewards:** Earned is your stake on the chain minus what you put in. Each payout that raises it is listed with the day
+  this phone first saw it, next to your pool, its fee and how it pays out.
+- **Reaching a goal:** a celebration, then three ways on: start the next goal (its stake can count toward the new one,
+  with no transaction, because the NIM stays where it is), use the money, or raise the target and keep it growing.
+- **Using the money:** the real unstaking path and wait, then pay any Bitcoin Lightning invoice from your wallet. Kuza
+  hands the invoice to Nimiq Pay, which shows the price, lets you pay with NIM or USDT and asks you to approve. Kuza
+  itself sells nothing and swaps nothing.
 - **Breaking a goal:** shows the real unstaking path and the real wait, with live block numbers.
-- **Group jar:** an invite link lets a friend pay your own address directly, with a note in the transaction.
-  Kuza reads the note on-chain and counts it toward the goal.
+- **Friends chip in:** a short invite link, a ready message to copy and a QR code. Opened in a phone browser, the link
+  shows the goal, one button into Nimiq Pay (on Android it falls back to the Play Store when the app isn't there) and
+  what Nimiq Pay is. A gift goes from the friend's wallet straight to your address with a note, which Kuza reads
+  on-chain and counts toward the goal. After it lands, the friend sees the goal move and can start a goal of their own.
+  Older `?jar=` links still open.
 - **English, Spanish, French and Swahili**, following the language set in Nimiq Pay.
 
 ## What it doesn't do
@@ -58,7 +70,8 @@ through at 65,924,317, and after the two approvals the staker shows 1,100 NIM ac
 on mainnet: connecting, the safety warning on an invite link, the live cooling-off, the gift counted toward the goal,
 and goals surviving a close and reopen. Before that, every flow ran on testnet, on an emulator and a real phone.
 
-Not tested yet: an iPhone, and rewards. Earned still shows +0 because no reward has reached the stake yet: the pool adds
+Not tested yet on a real phone: an iPhone; the invite page's button on a phone without Nimiq Pay; a Lightning payment;
+monthly plans and moving a goal on (these run in the demo and the tests). And rewards. Earned still shows +0 because no reward has reached the stake yet: the pool adds
 rewards to a stake only once they reach 1 NIM, and at 1,100 NIM that takes about six and a half days. The pool's own
 figures showed 0.495 NIM built up on 4 November, so the first reward is due around 8 November. All wallets above are
 our own test wallets; we know of no outside user yet.
@@ -101,7 +114,7 @@ in [`docs/js/staking.js`](docs/js/staking.js), with its sources listed at the to
 ```
 docs/          the site, served as static files on Cloudflare Workers. No build step.
   js/app.js    screens and flows
-  js/staking.js, goals.js, jar.js, nim.js, nudge.js   pure logic, unit tested
+  js/staking.js, goals.js, jar.js, nim.js, nudge.js, invite.js, rewards.js, spend.js, qr.js   pure logic, unit tested
   js/chain.js  read-only JSON-RPC
   js/wallet.js the Nimiq Pay provider
   js/mock.js   pretend wallet and chain for ?demo=1
@@ -117,6 +130,8 @@ test/          unit tests and a phone-sized run through the demo
 python3 -m http.server -d docs 8000     # open http://localhost:8000/?demo=1
 npm test                                # logic and translations
 node test/ui/drive.mjs /tmp/kuza-ui     # needs google-chrome; drives the demo and keeps screenshots
+node test/ui/drive-v3.mjs /tmp/kuza-v3  # plans, rewards, sharing, Lightning, the invite page (also needs zbarimg)
+node test/qr-decode.mjs /tmp/kuza-qr    # QR codes read back by zbarimg
 ```
 
 No dependencies to install. The vendored SDK matches npm's `sha512-gDumiC+5OiN5rIaWXS2moNmDKTav8evrAvs2qLMfcSyTVgIKtX7Prmcgj7k9PXrMyGk0JMmIKaG1lbPkSg8/Ew==`.

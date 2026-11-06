@@ -170,6 +170,7 @@ main { display: flex; flex-direction: column; gap: 12px; }
 .ideas, .quick { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip-btn { padding: 7px 12px; border-radius: 999px; background: #efecdf; font-size: 14px; font-weight: 600; }
 .chip-btn:active { background: #e4dfc9; }
+a.chip-btn { color: var(--ink); text-decoration: none; display: inline-block; }
 
 .foot { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 10px; font-size: 13px; color: var(--mute); }
 
@@ -224,9 +225,85 @@ input:focus, select:focus { border-color: var(--gold); }
 .card .skeleton { background: #ece9df; height: 18px; }
 .w60 { width: 60%; }
 
+/* ---------- v3: plans, moments, invites, rewards, spending ---------- */
+.hero-btn { display: block; color: inherit; min-width: 0; flex: 1; border-radius: 10px; margin: -4px -6px; padding: 4px 6px; }
+.hero-btn:active { background: rgba(255, 255, 255, .1); }
+.hero-btn .hero-k svg { vertical-align: -1px; opacity: .8; }
+.tile-btn { text-align: left; width: 100%; }
+.tile-btn:active { background: #f4f1e8; }
+.tile-btn .tile-k svg { vertical-align: -1px; }
+.hero-btn:focus-visible, .tile-btn:focus-visible, .card.notice:focus-visible, summary:focus-visible, .seg button:focus-visible { outline: 2.5px solid var(--ink); outline-offset: 2px; }
+.hero-btn:focus-visible { outline-color: #fff; }
+
+.card.notice.mark { animation: pop .42s cubic-bezier(.2, 0, 0, 1); }
+@keyframes pop { 0% { transform: scale(.94); opacity: 0; } 60% { transform: scale(1.015); opacity: 1; } }
+.card.notice.reached, .card.notice[data-rig=spend-card] { align-items: flex-start; }
+.reached-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.reached-acts .btn.small { min-height: 38px; }
+
+.card.plan { display: flex; flex-direction: column; gap: 8px; }
+.plan-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+.plan-row b { text-align: right; overflow-wrap: anywhere; }
+.plan-k { color: var(--mute); flex: none; }
+.card.plan .weeks { margin: 4px 0 0; }
+.card.flat { box-shadow: none; background: #f7f5ee; display: flex; flex-direction: column; gap: 8px; }
+
+.plan-in { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
+.seg { display: inline-flex; background: #efecdf; border-radius: 12px; padding: 3px; gap: 2px; }
+.seg button { padding: 0 12px; border-radius: 9px; font-size: 14px; font-weight: 600; color: var(--mute); white-space: nowrap; min-height: 40px; }
+.seg button[aria-checked=true] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(31, 35, 72, .14); }
+
+.invite-card { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 16px; background: linear-gradient(135deg, #fffaf0, #fdf1d3); border: 1.5px solid #f3e2b8; }
+.invite-card b { display: block; overflow-wrap: anywhere; }
+.invite-card .grow { min-width: 0; }
+
+.qr { display: grid; place-items: center; padding: 8px 0 2px; }
+.qr svg { border-radius: 14px; box-shadow: 0 2px 12px rgba(31, 35, 72, .12); max-width: 100%; height: auto; }
+.form.center { align-items: stretch; text-align: center; }
+
+.rw-total { background: #f7f5ee; border-radius: 14px; padding: 12px 14px; }
+.rw-total .num { color: var(--green); }
+.entry-v.good { color: var(--green); }
+
+textarea { width: 100%; padding: 10px 13px; background: #fff; border: 1.5px solid var(--line); border-radius: 12px; outline: 0; resize: vertical;
+  font: 13px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--ink); min-height: 84px; overflow-wrap: anywhere; }
+textarea:focus { border-color: var(--gold); }
+
+details.trust { padding-top: 2px; }
+details.trust summary { cursor: pointer; font-weight: 600; color: var(--ink-2); padding: 6px 0; list-style-position: inside; }
+details.trust[open] summary { margin-bottom: 6px; }
+details.trust > * + * { margin-top: 8px; }
+.card.trust { display: block; }
+.copy-row { display: flex; gap: 8px; align-items: center; }
+.copy-row .mono { min-width: 0; }
+.copy-row .btn.small { flex: none; }
+
+.inv-cta .btn.primary { min-height: 54px; font-size: 17px; }
+.stores { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.btn.store { background: var(--ink); color: #fff; border: 0; }
+.btn.store:not(:disabled):active { background: var(--ink-2); }
+.done-row { text-decoration: none; color: inherit; }
+.entry.spend .entry-v { color: var(--ink-2); }
+
+/* The moment a goal is reached or a gift lands: small gold hexagons burst out once around the ring. */
+.party { position: relative; display: grid; place-items: center; padding: 6px 0; }
+.party .bit { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px; opacity: 0;
+  background: linear-gradient(135deg, #f7c948, #ec991c); clip-path: polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0 50%);
+  animation: burst 1.1s cubic-bezier(.2, .7, .3, 1) .15s forwards; }
+.party .b0 { --x: -86px; --y: -58px; } .party .b1 { --x: 92px; --y: -44px; } .party .b2 { --x: -70px; --y: 52px; }
+.party .b3 { --x: 78px; --y: 64px; } .party .b4 { --x: 4px; --y: -88px; } .party .b5 { --x: -104px; --y: 4px; }
+.party .b6 { --x: 108px; --y: 10px; } .party .b7 { --x: -30px; --y: 84px; } .party .b8 { --x: 40px; --y: -80px; }
+.party .b9 { --x: 26px; --y: 90px; width: 7px; height: 7px; }
+@keyframes burst { 0% { opacity: 0; transform: translate(0, 0) scale(.4) rotate(0); } 25% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--x), var(--y)) scale(1) rotate(160deg); } }
+.thanks .plus { font-weight: 800; font-size: 22px; color: var(--green); animation: pop .5s cubic-bezier(.2, 0, 0, 1) .35s both; }
+.own-goal { display: flex; flex-direction: column; gap: 10px; background: linear-gradient(160deg, #fffefb 40%, #fdf1d3); }
+
 /* Less motion: nothing moves or pulses, but sheets, toasts and views still fade, so changes stay easy to follow. */
 @media (prefers-reduced-motion: reduce) {
   .boot-hex, .skeleton { animation: none; }
+  .party .bit { animation: none; }
+  .card.notice.mark, .thanks .plus { animation: fade .16s ease-out; }
   .shade, .sheet, .toast, .view-in { animation: fade .16s ease-out; }
   .shade.out, .shade.out .sheet, .toast.out { animation: fade-out .12s ease-in forwards; }
   .btn, .card.goal, .card.notice.nudge { transition: none; }

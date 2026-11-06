@@ -9,19 +9,25 @@ import * as C from './chain.js';
 import * as W from './wallet.js';
 import * as A from './api.js';
 import * as N from './nudge.js';
-import { h, icon, hexRing, logo, openSheet, closeSheet, sheetOpen, toast, copyText, GOAL_ICONS } from './ui.js';
+import * as I from './invite.js';
+import * as RW from './rewards.js';
+import * as P from './spend.js';
+import { qrMatrix, qrPath } from './qr.js';
+import { h, svg, icon, hexRing, logo, openSheet, closeSheet, sheetOpen, toast, copyText, GOAL_ICONS } from './ui.js';
 import { t, tn, setLang, pickLang, LANGS, lang } from './i18n.js';
 
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo') === '1' && !W.inHost(); // the pretend wallet never runs inside the real one
 const REPO = 'https://github.com/swiftbotlabs/kuza';
-const APP_URL = 'https://kuza.swiftbotlab.workers.dev/';
+const APP_URL = I.APP_URL;
+const PLATFORM = I.platformOf(navigator.userAgent, navigator.maxTouchPoints || 0);
 const HOUR = 3600e3;
 const TX_WINDOW = 2.5 * HOUR; // a transaction not mined after its validity window never will be
 
 const R = {
   network: 'mainnet', fiat: null, accounts: [], fresh: false, height: null, staker: undefined, wallet: null, spendable: null, walletComplete: false,
   validators: [], market: null, stats: null, online: true, syncedAt: 0, syncing: false, jar: null, jail: 0, gifts: null,
+  banner: null, celebrate: null, openNew: undefined,
 };
 let st = G.sanitizeState(null);
 const root = () => document.getElementById('app');
@@ -81,6 +87,14 @@ function day(ms) {
   if (!validDate(ms)) return '';
   return new Intl.DateTimeFormat(lang(), { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(ms));
 }
+
+function shortDay(ms) {
+  if (!validDate(ms)) return '';
+  return new Intl.DateTimeFormat(lang(), { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(ms));
+}
+
+/** "a week" / "a month" style labels for a goal's plan period. */
+const per = (goal) => (goal.every === 'month' ? 'month' : 'week');
 
 function dateText(date) {
   return date ? day(Date.parse(date + 'T12:00:00Z')) : '';
@@ -191,6 +205,8 @@ async function sync() {
     }
     await Promise.all([checkPending(), refreshJail(staker).catch(() => {})]);
     finishWithdrawIfDone();
+    noteRewards();
+    if (!R.fresh && R.spendable === null) await quietWallet().catch(() => {});
     if (Date.now() - lastGiftCheck > 60e3) {
       lastGiftCheck = Date.now();
       await refreshGifts().catch(() => {});
@@ -207,6 +223,33 @@ async function sync() {
     R.again = false;
     await sync();
   }
+}
+
+/** Book any rise in Earned as a reward that arrived, unless money is moving and the numbers may be mid-change. */
+function noteRewards() {
+  if (R.staker === undefined) return;
+  const steady = !hasPending() && !st.unstake;
+  const { rw, added } = RW.trackRewards(st.rewards, earned(), Date.now(), steady);
+  if (rw === st.rewards) return;
+  st.rewards = rw;
+  saveState();
+  if (added >= LUNA / 100) toast(t('toast.reward', { amount: nim(added) }), 'good', 5000);
+}
+
+/**
+ * After a reopen, read the balance of the accounts the wallet listed last time. getBalance needs no approval
+ * (Nimiq Pay's own docs, and its host code), so the wallet line is back without a Connect sheet. If the wallet has
+ * moved to a new payment account since, the old one reads 0 and nothing is shown; the next Connect brings the new one.
+ */
+async function quietWallet() {
+  if (R.fresh || !st.address || !st.accounts.length || st.accounts[0] !== st.address) return;
+  const provider = W.getProvider();
+  if (typeof provider?.getBalance !== 'function') return;
+  const read = await W.walletBalances(st.accounts);
+  if (R.fresh || read.spendable === null) return; // a Connect in the meantime has the newer answer
+  R.wallet = read.total;
+  R.spendable = read.spendable;
+  R.walletComplete = read.complete;
 }
 
 async function loadExtras() {
@@ -229,6 +272,8 @@ async function connect() {
   R.accounts = clean;
   R.fresh = true;
   adoptAddress(clean[0]);
+  st.accounts = clean;
+  saveState();
   await readWallet();
   if (R.network === 'mainnet' && !DEMO && !st.seen && !st.noCount) {
     A.reportSeen(clean[0]).then(() => { st.seen = true; saveState(); }).catch(() => {});
@@ -268,6 +313,17 @@ async function ensureFresh() {
     else toast(t('err.connect'), 'bad');
     return false;
   }
+}
+
+/** The wallet moved to a new payment account: keep the list current and read the balance again. */
+function accountsChanged(list) {
+  const clean = (Array.isArray(list) ? list : []).map(normalizeAddress).filter(Boolean);
+  if (!clean.length || clean[0] !== st.address) return;
+  st.accounts = clean;
+  saveState();
+  if (R.fresh) R.accounts = clean;
+  forgetWallet();
+  (R.fresh ? readWallet() : quietWallet()).catch(() => {}).finally(() => { if (!sheetOpen() && !R.jar) render(); });
 }
 
 /* ---------- wallet actions ---------- */
@@ -585,14 +641,17 @@ function summaryCard() {
   const inWallet = notedInWallet();
   const pool = poolOf(R.staker?.delegation);
   const rate = rateText(pool?.fee ?? 0.05);
+  const last = RW.lastReward(st.rewards);
   return h('section', { class: 'hero' },
     h('div', { class: 'hero-label' }, t('home.staked')),
     R.staker === undefined ? h('div', { class: 'skeleton w60' }) : amountBlock(staked, { big: true }),
     h('div', { class: 'hero-row' },
-      h('div', {}, h('div', { class: 'hero-k' }, t('home.earned')), h('div', { class: 'hero-v' }, `+${nim(earned())}`)),
+      h('button', { class: 'hero-btn', 'data-rig': 'earned', 'aria-label': t('rw.title'), onclick: sheetRewards },
+        h('div', { class: 'hero-k' }, t('home.earned'), ' ', icon('info', 12)), h('div', { class: 'hero-v' }, `+${nim(earned())}`)),
       h('div', {}, h('div', { class: 'hero-k' }, t('home.inWallet')), h('div', { class: 'hero-v' }, nim(inWallet))),
       rate ? h('div', {}, h('div', { class: 'hero-k' }, t('home.rate')), h('div', { class: 'hero-v' }, `~${rate}`)) : null),
-    pool ? h('div', { class: 'hero-foot' }, t('home.pool', { name: pool.name })) : null);
+    pool ? h('div', { class: 'hero-foot' }, t('home.pool', { name: pool.name }),
+      last ? ` · ${t('home.lastReward', { amount: nim(last.luna), date: shortDay(last.at) })}` : R.staker ? ` · ${t('home.noReward')}` : '') : null);
 }
 
 const notedInWallet = () => openGoals().reduce((sum, g) => sum + G.parts(g).wallet, 0);
@@ -618,11 +677,15 @@ function goalCard(goal) {
   const run = G.streak(goal, Date.now());
   const track = G.onTrack(goal, prog.saved, Date.now());
   const pending = goal.entries.some((e) => e.status === 'pending');
+  const next = prog.ratio < 1 ? G.nextSave(goal, Date.now()) : null;
   return h('button', { class: 'card goal', 'data-rig': `goal-${goal.id}`, onclick: () => { location.hash = `#/goal/${goal.id}`; } },
     hexRing(prog.ratio, 74, h('div', { class: 'pct' }, `${Math.floor(prog.ratio * 100)}%`)),
     h('div', { class: 'goal-main' },
       h('div', { class: 'goal-name' }, icon(goal.icon, 18), h('span', {}, goal.name)),
       h('div', { class: 'small' }, t('goal.of', { saved: fmtNim(prog.saved, lang()), target: nim(goal.target) })),
+      next ? h('div', { class: 'tiny mute', 'data-rig': 'next-line' }, next.done
+        ? t(`plan.doneShort.${per(goal)}`)
+        : t('plan.nextShort', { amount: nim(next.amount, 0), date: shortDay(next.by) })) : null,
       h('div', { class: 'chips' },
         pending ? h('span', { class: 'chip wait' }, t('goal.confirming')) : null,
         prog.ratio >= 1 ? h('span', { class: 'chip good' }, t('goal.reached')) : null,
@@ -663,7 +726,8 @@ function viewWelcome() {
     h('ul', { class: 'wp' },
       point('seed', t('welcome.p1'), t('welcome.p1b')),
       point('flame', t('welcome.p2'), rate ? t('welcome.p2rate', { rate }) : t('welcome.p2b')),
-      point('clock', t('welcome.p3'), t('welcome.p3b'))),
+      point('clock', t('welcome.p3'), t('welcome.p3b')),
+      point('gift', t('welcome.p4'), t('welcome.p4b'))),
     h('button', { class: 'btn primary wide', 'data-rig': 'connect', onclick: go }, t('welcome.connect')),
     h('p', { class: 'tiny mute center' }, t('welcome.note')),
     footer()));
@@ -686,8 +750,20 @@ function viewHome() {
         h('div', { class: 'ideas' }, [t('idea.emergency'), t('idea.phone'), t('idea.school'), t('idea.trip')].map((name) => h('button', { class: 'chip-btn', onclick: () => sheetGoal(null, name) }, name))),
         h('button', { class: 'btn primary wide', 'data-rig': 'new-goal', onclick: () => sheetGoal() }, t('home.first'))),
     existingStakeNote(),
+    doneGoals(),
     footer());
   return chrome(body);
+}
+
+/** Goals marked done stay on the phone as a small record. */
+function doneGoals() {
+  const done = st.goals.filter((g) => g.closedAt).sort((a, b) => b.closedAt - a.closedAt);
+  if (!done.length) return null;
+  return h('section', { class: 'card', 'data-rig': 'done-goals' },
+    h('h3', {}, t('done.title')),
+    done.slice(0, 10).map((g) => h('a', { class: 'entry done-row', href: `#/goal/${g.id}` },
+      h('div', {}, h('div', { class: 'small' }, g.name), h('div', { class: 'tiny mute' }, t('done.when', { date: day(g.reachedAt || g.closedAt) }))),
+      h('div', { class: 'entry-v' }, nim(g.target, 0)))));
 }
 
 function existingStakeNote() {
@@ -703,12 +779,10 @@ function viewGoal(goal) {
   }
   const prog = goalProgress(goal);
   const now = Date.now();
-  const run = G.streak(goal, now);
   const reached = prog.ratio >= 1;
-  const track = G.onTrack(goal, prog.saved, now);
-  const weeks = G.weekStrip(goal, now, 8);
+  const done = Boolean(goal.closedAt);
   const entries = [...goal.entries].sort((a, b) => b.at - a.at);
-  const stakeable = prog.wallet > 0 && S.saveRoute(prog.wallet, R.staker).route !== 'aside';
+  const stakeable = !done && prog.wallet > 0 && S.saveRoute(prog.wallet, R.staker).route !== 'aside';
   const body = h('main', {},
     h('section', { class: 'goal-hero' },
       hexRing(prog.ratio, 164, h('div', {}, goalIcon(goal), h('div', { class: 'pct big' }, `${Math.floor(prog.ratio * 100)}%`)), { width: 6 }),
@@ -716,42 +790,153 @@ function viewGoal(goal) {
       h('div', { class: 'mute' }, t('goal.of', { saved: fmtNim(prog.saved, lang()), target: nim(goal.target) })),
       fiat(goal.target) ? h('div', { class: 'tiny mute' }, `≈ ${fiat(prog.saved)} / ${fiat(goal.target)}`) : null,
       goal.date ? h('div', { class: 'tiny mute' }, t('goal.by', { date: dateText(goal.date) })) : null),
-    reached ? h('div', { class: 'card notice good' }, h('div', { class: 'notice-i' }, icon('check')), h('div', {}, h('b', {}, t('goal.doneTitle')), h('div', { class: 'small mute' }, t('goal.doneBody')))) : null,
+    markBanner(goal),
+    done ? h('div', { class: 'card notice good', 'data-rig': 'done-card' }, h('div', { class: 'notice-i' }, icon('check')),
+      h('div', { class: 'grow' }, h('b', {}, t('done.cardTitle')), h('div', { class: 'small mute' }, t('done.cardBody', { date: day(goal.closedAt) })))) : null,
+    !done && reached ? reachedCard(goal) : null,
     coolingCard(),
+    spentCard(goal, prog),
     h('div', { class: 'split' },
       h('div', { class: 'tile' }, h('div', { class: 'tile-k' }, t('goal.inStake')), h('div', { class: 'tile-v' }, nim(prog.stake))),
-      h('div', { class: 'tile' }, h('div', { class: 'tile-k' }, t('goal.earned')), h('div', { class: 'tile-v good' }, `+${nim(prog.earned)}`)),
+      h('button', { class: 'tile tile-btn', 'data-rig': 'goal-earned', onclick: sheetRewards }, h('div', { class: 'tile-k' }, t('goal.earned'), ' ', icon('info', 12)), h('div', { class: 'tile-v good' }, `+${nim(prog.earned)}`)),
       h('div', { class: 'tile' }, h('div', { class: 'tile-k' }, t('goal.inWallet')), h('div', { class: 'tile-v' }, nim(prog.wallet))),
       h('div', { class: 'tile' }, h('div', { class: 'tile-k' }, t('goal.gifts')), h('div', { class: 'tile-v' }, nim(prog.gifts)))),
     stakeable ? h('button', { class: 'card notice gold', 'data-rig': 'stake-wallet', onclick: () => sheetSave(goal, { includeWallet: true }) },
       h('div', { class: 'notice-i' }, icon('seed')),
       h('div', {}, h('b', {}, t('goal.moveTitle', { amount: nim(prog.wallet) })), h('div', { class: 'small mute' }, t('goal.moveBody')))) : null,
-    h('div', { class: 'actions' },
+    done ? null : h('div', { class: 'actions' },
       h('button', { class: 'btn primary', 'data-rig': 'save', onclick: () => sheetSave(goal) }, icon('plus', 18), t('goal.save')),
       h('button', { class: 'btn', 'data-rig': 'share', onclick: () => sheetShare(goal) }, icon('share', 18), t('goal.share'))),
-    goal.weekly ? h('section', { class: 'card' },
-      h('div', { class: 'row-between' },
-        h('b', {}, t('goal.plan', { amount: nim(goal.weekly, 0) })),
-        run ? h('span', { class: 'chip fire' }, icon('flame', 13), tn('goal.streak', run)) : null),
-      h('div', { class: 'weeks' }, weeks.map((w) => h('span', { class: `wk ${w.met ? 'met' : ''} ${w.current ? 'now' : ''}`, title: nim(w.amount) }))),
-      track && !reached ? h('div', { class: 'small mute' }, track.ok ? t('goal.ahead') : t('goal.behindLong', { amount: nim(-track.delta, 0) })) : null) : null,
+    !done && !R.fresh && st.address ? h('p', { class: 'tiny mute center', 'data-rig': 'connect-note' }, t('goal.connectNote')) : null,
+    !done && !reached ? inviteNudge(goal, prog) : null,
+    !done ? planCard(goal, prog, now) : null,
     h('section', { class: 'card' },
       h('h3', {}, t('goal.activity')),
       entries.length ? entries.slice(0, 30).map(entryRow) : h('p', { class: 'small mute' }, t('goal.noActivity'))),
     h('div', { class: 'links' },
-      h('button', { class: 'link', 'data-rig': 'edit', onclick: () => sheetGoal(goal) }, t('goal.edit')),
+      done
+        ? h('button', { class: 'link', 'data-rig': 'reopen', onclick: () => { goal.closedAt = null; saveState(); render(); } }, t('done.reopen'))
+        : h('button', { class: 'link', 'data-rig': 'edit', onclick: () => sheetGoal(goal) }, t('goal.edit')),
       prog.stake > 0 || (R.staker?.inactive ?? 0) > 0
         ? h('button', { class: 'link danger', 'data-rig': 'break', onclick: () => sheetWithdraw(goal) }, reached ? t('goal.takeOut') : t('goal.break'))
         : h('button', { class: 'link danger', 'data-rig': 'delete', onclick: () => sheetDelete(goal) }, t('goal.delete'))));
   return chrome(body, { back: true, title: goal.name, tools: h('span', { class: 'icon-spacer' }) });
 }
 
+/** The 25 / 50 / 75% moment, shown on the goal until the user leaves it. */
+function markBanner(goal) {
+  if (!R.banner || R.banner.id !== goal.id) return null;
+  return h('div', { class: 'card notice gold mark', 'data-rig': 'mark-banner', role: 'status' },
+    h('div', { class: 'notice-i' }, icon('flame')),
+    h('div', { class: 'grow' }, h('b', {}, t(`mark.${R.banner.mark}`)), h('div', { class: 'small mute' }, t('mark.body', { name: goal.name }))));
+}
+
+function reachedCard(goal) {
+  return h('section', { class: 'card notice good reached', 'data-rig': 'reached-card' },
+    h('div', { class: 'notice-i' }, icon('check')),
+    h('div', { class: 'grow' },
+      h('b', {}, t('goal.doneTitle')),
+      h('div', { class: 'small mute' }, t('reached.cardBody')),
+      h('div', { class: 'reached-acts' },
+        h('button', { class: 'btn small', 'data-rig': 'r-next', onclick: () => sheetGoal(null, '', { from: goal }) }, t('reached.next')),
+        h('button', { class: 'btn small', 'data-rig': 'r-use', onclick: () => sheetUse(goal) }, t('reached.use')),
+        h('button', { class: 'btn small ghost', 'data-rig': 'r-keep', onclick: () => sheetGoal(goal) }, t('reached.raise')))));
+}
+
+/** Once a goal's stake is back in the wallet: spend it, or mark the goal done. */
+function spentCard(goal, prog) {
+  const back = goal.entries.some((e) => e.kind === 'withdraw' && e.status === 'ok');
+  const out = R.staker && (R.staker.inactive > 0 || R.staker.retired > 0);
+  if (!back || prog.stake > 0 || out || goal.closedAt) return null;
+  return h('section', { class: 'card notice gold', 'data-rig': 'spend-card' },
+    h('div', { class: 'notice-i' }, icon('bolt')),
+    h('div', { class: 'grow' },
+      h('b', {}, t('spend.backTitle')),
+      h('div', { class: 'small mute' }, t('spend.backBody')),
+      h('div', { class: 'reached-acts' },
+        h('button', { class: 'btn small', 'data-rig': 'spend-pay', onclick: () => sheetPayInvoice(goal) }, icon('bolt', 16), t('spend.pay')),
+        h('button', { class: 'btn small ghost', 'data-rig': 'spend-done', onclick: () => markDone(goal) }, t('spend.markDone')))));
+}
+
+function inviteNudge(goal, prog) {
+  if (prog.gifts > 0 || goal.sharedAt) return null;
+  if (!goal.entries.some((e) => e.status === 'ok')) return null;
+  return h('button', { class: 'card notice', 'data-rig': 'invite-nudge', onclick: () => sheetShare(goal) },
+    h('div', { class: 'notice-i' }, icon('gift')),
+    h('div', { class: 'grow' }, h('b', {}, t('invite.nudgeTitle')), h('div', { class: 'small mute' }, t('invite.nudgeBody', { name: goal.name }))),
+    h('span', { class: 'notice-go' }, icon('next', 18)));
+}
+
+/** The savings plan: next saving, on plan or not, when the goal lands at this pace, and the last periods. */
+function planCard(goal, prog, now) {
+  if (!goal.weekly) {
+    if (prog.ratio >= 1) return null;
+    return h('button', { class: 'card notice', 'data-rig': 'plan-add', onclick: () => sheetGoal(goal) },
+      h('div', { class: 'notice-i' }, icon('clock')),
+      h('div', { class: 'grow' }, h('b', {}, t('plan.addTitle')), h('div', { class: 'small mute' }, t('plan.addBody'))),
+      h('span', { class: 'notice-go' }, icon('next', 18)));
+  }
+  const p = per(goal);
+  const run = G.streak(goal, now);
+  const reached = prog.ratio >= 1;
+  const next = reached ? null : G.nextSave(goal, now);
+  const status = reached ? null : G.planStatus(goal, prog.saved, now);
+  const finish = reached ? null : G.projectFinish(goal, prog.left, now);
+  const dateEnd = goal.date ? Date.parse(`${goal.date}T23:59:59Z`) : null;
+  const late = finish && dateEnd && finish.at > dateEnd;
+  const fix = late ? G.suggestPlan(goal.target, goal.date, now, goal.every, prog.saved) : null;
+  const strip = G.weekStrip(goal, now, 8);
+  const rows = [];
+  if (next) {
+    rows.push(h('div', { class: 'plan-row', 'data-rig': 'plan-next' },
+      h('span', { class: 'plan-k' }, t('plan.next')),
+      h('b', {}, next.done ? t(`plan.nextDone.${p}`, { amount: nim(next.amount, 0), date: shortDay(next.from) }) : t('plan.nextDue', { amount: nim(next.amount, 0), date: shortDay(next.by) }))));
+  }
+  if (status) {
+    const word = status.ok ? (status.delta > goal.weekly / 4 ? t('plan.ahead', { amount: nim(status.delta, 0) }) : t('goal.onTrack')) : t('goal.behind', { amount: nim(-status.delta, 0) });
+    rows.push(h('div', { class: 'plan-row', 'data-rig': 'plan-status' },
+      h('span', { class: 'plan-k' }, status.by === 'date' ? t('plan.byDate') : t('plan.byPlan')),
+      h('span', { class: `chip ${status.ok ? 'good' : 'warn'}` }, word)));
+  }
+  if (finish) {
+    rows.push(h('div', { class: 'plan-row', 'data-rig': 'plan-finish' },
+      h('span', { class: 'plan-k' }, t('plan.pace')),
+      h('b', {}, day(finish.at))));
+  }
+  return h('section', { class: 'card plan', 'data-rig': 'plan-card' },
+    h('div', { class: 'row-between' },
+      h('b', {}, t(`plan.title.${p}`, { amount: nim(goal.weekly, 0) })),
+      run ? h('span', { class: 'chip fire', 'data-rig': 'streak' }, icon('flame', 13), tn(`plan.streak.${p}`, run)) : null),
+    rows,
+    late && fix?.amount ? h('p', { class: 'tiny warn', 'data-rig': 'plan-late' }, t(`plan.late.${p}`, { amount: nim(fix.amount, 0) })) : null,
+    h('div', { class: 'weeks', 'aria-hidden': 'true' }, strip.map((w) => h('span', { class: `wk ${w.met ? 'met' : ''} ${w.current ? 'now' : ''}`, title: nim(w.amount) }))),
+    h('p', { class: 'tiny mute' }, t(`plan.stripNote.${p}`)));
+}
+
+function markDone(goal) {
+  goal.closedAt = Date.now();
+  if (!goal.reachedAt && goalProgress(goal).ratio >= 1) goal.reachedAt = goal.closedAt;
+  saveState();
+  closeSheet(true);
+  toast(t('toast.done'), 'good');
+  location.hash = '#/';
+  render();
+}
+
 function entryRow(e) {
   const label = {
     aside: t('entry.aside'), gift: e.note ? t('entry.giftNote', { note: e.note }) : t('entry.gift'), stake: t('entry.stake'),
-    assign: t('entry.assign'), withdraw: t('entry.withdraw'),
+    assign: e.ref ? t('entry.movedIn', { name: e.ref }) : t('entry.assign'), withdraw: t('entry.withdraw'),
+    move: t('entry.movedOut', { name: e.ref || '' }),
+    spend: e.sats ? t('entry.spendSats', { sats: fmtSats(e.sats) }) : t('entry.spend'),
   }[e.kind] || e.kind;
-  const sign = e.kind === 'withdraw' ? '−' : '+';
+  if (e.kind === 'spend') {
+    return h('div', { class: 'entry spend' },
+      h('div', {}, h('div', { class: 'small' }, label), h('div', { class: 'tiny mute' }, day(e.at))),
+      h('div', { class: 'entry-v' }, e.luna ? `−${nim(e.luna)}` : '',
+        e.hash ? h('a', { class: 'tiny', href: C.explorerTx(e.hash), target: '_blank', rel: 'noopener noreferrer' }, t('entry.proof')) : null));
+  }
+  const sign = e.kind === 'withdraw' || e.kind === 'move' ? '−' : '+';
   const status = e.status === 'pending' ? t('entry.pending') : e.status === 'failed' ? t('entry.failed') : '';
   return h('div', { class: `entry ${e.status}` },
     h('div', {},
@@ -772,6 +957,7 @@ function viewHow() {
     blk(t('how.q4'), t('how.a4')),
     blk(t('how.q5'), t('how.a5')),
     blk(t('how.q6'), t('how.a6')),
+    blk(t('how.q8'), t('how.a8')),
     blk(t('how.q7'), t('how.a7')),
     h('p', { class: 'center small' }, h('a', { href: REPO, target: '_blank', rel: 'noopener noreferrer' }, t('how.code')))), { back: true, title: t('how.title'), tools: h('span', { class: 'icon-spacer' }) });
 }
@@ -782,26 +968,40 @@ function field(label, input, hint) {
   return h('label', { class: 'field' }, h('span', { class: 'field-k' }, label), input, hint || null);
 }
 
-function sheetGoal(goal = null, presetName = '') {
+/**
+ * New goal or edit. With `from` (a reached goal) it's the next goal: its stake can be handed over to the new one,
+ * which needs no transaction, because the NIM stays where it is, in the user's own stake.
+ */
+function sheetGoal(goal = null, presetName = '', { from = null } = {}) {
   const now = Date.now();
   let icn = goal?.icon || 'seed';
+  let every = goal?.every === 'month' ? 'month' : 'week';
   const name = h('input', { type: 'text', maxlength: 40, value: goal?.name || presetName, placeholder: t('form.namePh'), autocomplete: 'off', 'data-rig': 'f-name' });
   const target = h('input', { type: 'text', inputmode: 'decimal', value: goal ? plainNim(goal.target) : '', placeholder: '50000', autocomplete: 'off', 'data-rig': 'f-target' });
   const date = h('input', { type: 'date', value: goal?.date || '', min: new Date(now + 864e5).toISOString().slice(0, 10), 'data-rig': 'f-date' });
   const weekly = h('input', { type: 'text', inputmode: 'decimal', value: goal?.weekly ? plainNim(goal.weekly) : '', placeholder: '0', autocomplete: 'off', 'data-rig': 'f-weekly' });
-  const hint = h('p', { class: 'tiny mute' });
+  const hint = h('p', { class: 'tiny mute', 'data-rig': 'f-hint' });
   const err = h('p', { class: 'tiny bad' });
+  const carry = from ? G.parts(from).stake : 0;
+  const move = carry > 0 ? h('input', { type: 'checkbox', checked: true, 'data-rig': 'f-move' }) : null;
   let touched = Boolean(goal?.weekly);
   weekly.addEventListener('input', () => { touched = true; });
+  const seg = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': t('form.every') });
+  const already = goal ? goalProgress(goal).saved : 0;
   const update = () => {
     const luna = toLuna(target.value);
     const f = luna ? fiat(luna) : '';
-    const sug = luna && date.value ? G.suggestWeekly(luna, date.value, now) : 0;
-    if (sug && !touched) weekly.value = String(Math.ceil(sug / LUNA));
-    hint.textContent = [f ? `≈ ${f}` : '', sug ? t('form.suggest', { amount: nim(sug, 0), weeks: G.weeksUntil(date.value, now) }) : ''].filter(Boolean).join(' · ');
+    const sug = luna && date.value ? G.suggestPlan(luna, date.value, now, every, already + (move?.checked ? carry : 0)) : { amount: 0, periods: 0 };
+    if (sug.amount && !touched) weekly.value = String(Math.ceil(sug.amount / LUNA));
+    hint.textContent = [f ? `≈ ${f}` : '', sug.amount ? t(`form.suggest.${every}`, { amount: nim(sug.amount, 0), n: sug.periods }) : ''].filter(Boolean).join(' · ');
+    seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.every === every)));
   };
+  for (const [key, label] of [['week', t('form.everyWeek')], ['month', t('form.everyMonth')]]) {
+    seg.append(h('button', { type: 'button', role: 'radio', 'data-every': key, 'data-rig': `f-every-${key}`, onclick: () => { every = key; update(); } }, label));
+  }
   target.addEventListener('input', update);
   date.addEventListener('change', update);
+  move?.addEventListener('change', update);
   const picks = h('div', { class: 'icons' }, GOAL_ICONS.map((name2) => h('button', { type: 'button', class: `pick ${name2 === icn ? 'on' : ''}`, 'aria-label': name2, onclick: (e) => { icn = name2; picks.querySelectorAll('.pick').forEach((b) => b.classList.remove('on')); e.currentTarget.classList.add('on'); } }, icon(name2))));
   const submit = () => {
     const cleanName = J.cleanText(name.value, 40);
@@ -812,29 +1012,46 @@ function sheetGoal(goal = null, presetName = '') {
     if (weeklyLuna === null) { err.textContent = t('form.errWeekly'); return; }
     if (date.value && Number.isNaN(Date.parse(date.value))) { err.textContent = t('form.errDate'); return; }
     if (goal) {
-      Object.assign(goal, { name: cleanName, target: luna, date: date.value || null, weekly: weeklyLuna, icon: icn });
-    } else {
-      const fresh = G.newGoal({ id: newId(), name: cleanName, target: luna, date: date.value || null, weekly: weeklyLuna, icon: icn, now });
-      st.goals.push(fresh);
+      Object.assign(goal, { name: cleanName, target: luna, date: date.value || null, weekly: weeklyLuna, every, icon: icn });
+      // A raised target means the goal isn't reached any more: its 100% can be celebrated again later.
+      if (goalProgress(goal).ratio < 1 && Array.isArray(goal.marks)) goal.marks = goal.marks.filter((m) => m < 100);
+      saveState();
+      closeSheet(true);
+      render();
+      return;
+    }
+    const fresh = G.newGoal({ id: newId(), name: cleanName, target: luna, date: date.value || null, weekly: weeklyLuna, every, icon: icn, now });
+    st.goals.push(fresh);
+    if (from && move?.checked && carry > 0) {
+      // The stake stays exactly where it is; only which goal it counts toward changes.
+      from.entries.push({ kind: 'move', luna: carry, at: now, status: 'ok', ref: cleanName });
+      fresh.entries.push({ kind: 'assign', luna: carry, at: now, status: 'ok', ref: from.name });
+      from.closedAt = now;
+      if (!from.reachedAt) from.reachedAt = now;
+      fresh.marks = G.passedMarks(goalProgress(fresh).ratio);
       saveState();
       closeSheet(true);
       location.hash = `#/goal/${fresh.id}`;
-      sheetSave(fresh, { first: true });
+      toast(t('toast.moved', { amount: nim(carry), name: cleanName }), 'good', 5000);
       return;
     }
     saveState();
     closeSheet(true);
-    render();
+    location.hash = `#/goal/${fresh.id}`;
+    sheetSave(fresh, { first: true });
   };
   const form = h('form', { class: 'form', onsubmit: (e) => { e.preventDefault(); submit(); } },
+    from ? h('p', { class: 'small good' }, t('form.nextIntro', { name: from.name })) : null,
     field(t('form.name'), name),
     h('div', { class: 'icons-wrap' }, picks),
     field(t('form.target'), target),
     field(t('form.date'), date),
-    field(t('form.weekly'), weekly),
-    hint, err,
+    h('div', { class: 'field' }, h('span', { class: 'field-k' }, t('form.plan')), h('div', { class: 'plan-in' }, weekly, seg)),
+    hint,
+    move ? h('label', { class: 'toggle' }, move, h('span', { class: 'small' }, t('form.move', { amount: nim(carry), name: from.name }))) : null,
+    err,
     h('button', { class: 'btn primary wide', type: 'submit', 'data-rig': 'f-submit' }, goal ? t('form.saveEdit') : t('form.create')));
-  openSheet(goal ? t('form.editTitle') : t('form.newTitle'), form);
+  openSheet(goal ? t('form.editTitle') : from ? t('form.nextTitle') : t('form.newTitle'), form);
   update();
   if (!goal) name.focus();
 }
@@ -982,6 +1199,8 @@ function poolRow(pool, onPick) {
     h('span', { class: 'tiny link-ish' }, t('pool.change')));
 }
 
+const fmtSats = (n) => new Intl.NumberFormat(lang(), { maximumFractionDigits: 3 }).format(n);
+
 const fmtPct = (x) => new Intl.NumberFormat(lang(), { style: 'percent', maximumFractionDigits: 2 }).format(x);
 
 function sheetPools(onPick) {
@@ -993,23 +1212,187 @@ function sheetPools(onPick) {
         h('span', { class: 'tiny mute' }, [v.fee !== null ? t('pool.fee', { fee: fmtPct(v.fee) }) : '', v.schedule].filter(Boolean).join(' · ')))))));
 }
 
+/** A QR code as inline SVG (no image request, nothing for the content policy to allow). */
+function qrBox(text, size = 232) {
+  const { d, size: n } = qrPath(qrMatrix(text));
+  return h('div', { class: 'qr', 'data-rig': 'qr' },
+    svg('svg', { viewBox: `0 0 ${n} ${n}`, width: size, height: size, role: 'img', 'aria-label': t('qr.label'), 'shape-rendering': 'crispEdges' },
+      svg('rect', { width: n, height: n, fill: '#fff' }),
+      svg('path', { d, fill: '#1f2348' })));
+}
+
+function sheetQR(link, title, body) {
+  openSheet(title, h('div', { class: 'form center' },
+    qrBox(link),
+    h('p', { class: 'small' }, body),
+    h('code', { class: 'mono', 'data-rig': 'qr-link' }, link),
+    h('button', { class: 'btn wide', onclick: () => closeSheet() }, t('common.ok'))));
+}
+
 function sheetShare(goal) {
-  const link = `${APP_URL}?jar=${J.encodeJar({ id: goal.id, name: goal.name, target: goal.target, date: goal.date, owner: st.address, net: R.network })}`;
-  const box = h('input', { type: 'text', readonly: true, value: link, onclick: (e) => e.target.select(), 'data-rig': 'share-link' });
-  const copy = async () => {
-    const ok = await copyText(link);
-    toast(ok ? t('share.copied') : t('share.select'), ok ? 'good' : 'info');
-    if (!ok) box.select();
+  const link = I.inviteLink(goal, st.address, R.network);
+  const message = t('share.msg', { name: goal.name, link });
+  const prog = goalProgress(goal);
+  const shared = () => {
+    if (!goal.sharedAt) {
+      goal.sharedAt = Date.now();
+      saveState();
+      render(); // the "ask friends" card under the sheet has done its job
+    }
   };
-  const native = typeof navigator.share === 'function'
-    ? h('button', { class: 'btn wide', onclick: () => navigator.share({ title: goal.name, text: t('share.text', { name: goal.name }), url: link }).catch(() => {}) }, t('share.system'))
-    : null;
+  const box = h('input', { type: 'text', readonly: true, value: link, onclick: (e) => e.target.select(), 'data-rig': 'share-link' });
+  const copy = async (text, done) => {
+    const ok = await copyText(text);
+    toast(ok ? done : t('share.select'), ok ? 'good' : 'info', 4200);
+    if (ok) shared();
+    else box.select();
+  };
+  // The phone's own share sheet where the browser offers one (not inside every wallet's web view), else copy.
+  const canShare = typeof navigator.share === 'function';
+  const main = canShare
+    ? h('button', { class: 'btn primary wide', 'data-rig': 'share-native', onclick: () => navigator.share({ title: goal.name, text: t('share.msgShort', { name: goal.name }), url: link }).then(shared, () => {}) }, icon('share', 18), t('share.system'))
+    : h('button', { class: 'btn primary wide', 'data-rig': 'share-copy-msg', onclick: () => copy(message, t('share.copiedMsg')) }, icon('share', 18), t('share.copyMsg'));
   openSheet(t('share.title'), h('div', { class: 'form' },
+    h('div', { class: 'invite-card', 'data-rig': 'share-preview', 'aria-label': t('share.previewLabel') },
+      hexRing(prog.ratio, 58, h('div', { class: 'gi' }, icon('gift', 20)), { width: 8 }),
+      h('div', { class: 'grow' },
+        h('div', { class: 'tiny mute' }, t('share.previewKicker')),
+        h('b', {}, goal.name),
+        h('div', { class: 'tiny mute' }, t('goal.of', { saved: fmtNim(prog.saved, lang()), target: nim(goal.target) })))),
     h('p', { class: 'small' }, t('share.body')),
+    main,
+    h('div', { class: 'actions' },
+      h('button', { class: 'btn', 'data-rig': 'share-copy', onclick: () => copy(link, t('share.copied')) }, icon('link', 18), t('share.copy')),
+      h('button', { class: 'btn', 'data-rig': 'share-qr', onclick: () => { shared(); sheetQR(link, t('qr.title'), t('qr.body')); } }, icon('qr', 18), t('share.qr'))),
     field(t('share.link'), box),
-    h('button', { class: 'btn primary wide', 'data-rig': 'share-copy', onclick: copy }, icon('link', 18), t('share.copy')),
-    native,
+    canShare ? h('button', { class: 'link', 'data-rig': 'share-copy-msg', onclick: () => copy(message, t('share.copiedMsg')) }, t('share.copyMsg')) : null,
     h('p', { class: 'tiny mute' }, t('share.note', { address: shortAddress(st.address) }))));
+}
+
+/** How rewards reach the stake, and what Kuza has seen arrive. Everything here is read from the chain or this phone. */
+function sheetRewards() {
+  const pool = poolOf(R.staker?.delegation);
+  const rate = rateText(pool?.fee ?? 0.05);
+  const events = [...(st.rewards?.events || [])].reverse();
+  const total = earned();
+  openSheet(t('rw.title'), h('div', { class: 'form', 'data-rig': 'rewards-sheet' },
+    h('div', { class: 'rw-total' }, h('div', { class: 'tiny mute' }, t('rw.total')), amountBlock(total)),
+    events.length
+      ? h('section', {}, h('h3', {}, t('rw.seen')), events.slice(0, 8).map((e) => h('div', { class: 'entry' },
+        h('div', {}, h('div', { class: 'small' }, t('rw.event')), h('div', { class: 'tiny mute' }, when(e.at))),
+        h('div', { class: 'entry-v good' }, `+${nim(e.luna)}`))))
+      : h('p', { class: 'small', 'data-rig': 'rw-none' }, R.staker ? t('rw.none') : t('rw.noStake')),
+    pool ? h('div', { class: 'route' },
+      h('p', { class: 'small' }, h('b', {}, pool.name), ' · ', pool.fee !== null ? t('pool.fee', { fee: fmtPct(pool.fee) }) : ''),
+      h('p', { class: 'tiny mute' }, pool.schedule ? t('rw.schedule', { schedule: pool.schedule }) : t('rw.scheduleOwn'))) : null,
+    h('p', { class: 'small' }, t('rw.how1')),
+    h('p', { class: 'small' }, t('rw.how2')),
+    rate ? h('p', { class: 'tiny mute' }, t('how.a3rate', { rate })) : null,
+    st.rewards?.since ? h('p', { class: 'tiny mute' }, t('rw.since', { date: day(st.rewards.since) })) : null,
+    h('button', { class: 'btn wide', onclick: () => closeSheet() }, t('common.ok'))));
+}
+
+/** A goal hit 100%: say so once, with what got it there, and offer the three ways on. */
+function sheetReached(goal) {
+  const prog = goalProgress(goal);
+  const days = (Date.now() - goal.createdAt) / 864e5;
+  const row = (k, v) => h('div', { class: 'plan-row' }, h('span', { class: 'plan-k' }, k), h('b', {}, v));
+  openSheet(t('reached.title'), h('div', { class: 'form', 'data-rig': 'reached-sheet' },
+    h('div', { class: 'party', 'aria-hidden': 'true' }, Array.from({ length: 10 }, (_, i) => h('span', { class: `bit b${i}` })),
+      hexRing(1, 120, h('div', {}, goalIcon(goal), h('div', { class: 'pct big' }, '100%')), { width: 7 })),
+    h('h2', { class: 'center' }, t('reached.headline', { name: goal.name })),
+    h('div', { class: 'card flat' },
+      row(t('reached.saved'), nim(prog.saved)),
+      prog.gifts ? row(t('goal.gifts'), nim(prog.gifts)) : null,
+      row(t('goal.earned'), `+${nim(prog.earned)}`),
+      row(t('reached.took'), days < 1 ? t('reached.today') : tn('reached.days', Math.round(days)))),
+    h('p', { class: 'small' }, t('reached.choose')),
+    h('button', { class: 'btn primary wide', 'data-rig': 'rs-next', onclick: () => sheetGoal(null, '', { from: goal }) }, t('reached.next')),
+    h('button', { class: 'btn wide', 'data-rig': 'rs-use', onclick: () => sheetUse(goal) }, t('reached.use')),
+    h('button', { class: 'btn wide ghost', 'data-rig': 'rs-keep', onclick: () => closeSheet() }, t('reached.keep')),
+    h('p', { class: 'tiny mute center' }, t('reached.keepNote'))));
+}
+
+/** Using what a goal saved: out of the stake, into the wallet, then pay with it. Honest about each step. */
+function sheetUse(goal) {
+  const prog = goalProgress(goal);
+  const height = R.height ?? 0;
+  const startRelease = height ? S.releaseIfStartedAt(height, R.network) : 0;
+  const eta = startRelease ? t('use.s1eta', { time: hours(startRelease - height) }) : t('wd.s2any');
+  const step = (n, title, body) => h('li', { class: 'step' }, h('span', { class: 'step-n' }, n), h('div', {}, h('b', {}, title), h('div', { class: 'tiny mute' }, body)));
+  const staked = prog.stake > 0 || (R.staker?.inactive ?? 0) > 0;
+  openSheet(t('use.title'), h('div', { class: 'form', 'data-rig': 'use-sheet' },
+    h('p', { class: 'small' }, t('use.intro', { amount: nim(prog.stake + prog.earned) })),
+    h('ol', { class: 'steps' },
+      step(1, t('use.s1'), eta),
+      step(2, t('use.s2'), t('use.s2b')),
+      step(3, t('use.s3'), t('use.s3b'))),
+    staked ? h('button', { class: 'btn primary wide', 'data-rig': 'use-start', onclick: () => sheetWithdraw(goal) }, t('use.start')) : null,
+    h('button', { class: `btn wide ${staked ? '' : 'primary'}`, 'data-rig': 'use-pay', onclick: () => sheetPayInvoice(goal) }, icon('bolt', 18), t('spend.pay')),
+    h('p', { class: 'tiny mute' }, t('use.honest'))));
+}
+
+/** Pay a Bitcoin Lightning invoice with Nimiq Pay. Kuza checks the text and hands it over; the wallet does the rest. */
+function sheetPayInvoice(goal) {
+  const input = h('textarea', { rows: 3, maxlength: 2100, placeholder: 'lnbc…', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'data-rig': 'ln-input' });
+  const msg = h('p', { class: 'tiny', 'data-rig': 'ln-msg' });
+  const btn = h('button', { class: 'btn primary wide', 'data-rig': 'ln-pay', disabled: true }, icon('bolt', 18), t('spend.payGo'));
+  let checked = null;
+  let sending = false;
+  const check = () => {
+    checked = P.checkInvoice(input.value, R.network);
+    msg.className = `tiny ${checked.ok ? 'good' : input.value.trim() ? 'bad' : 'mute'}`;
+    msg.textContent = checked.ok
+      ? (checked.sats ? t('spend.okSats', { sats: fmtSats(checked.sats) }) : t('spend.okLnurl'))
+      : input.value.trim() ? t(`spend.err.${checked.reason}`) : t('spend.paste');
+    btn.disabled = sending || !checked.ok;
+  };
+  input.addEventListener('input', check);
+  btn.addEventListener('click', async () => {
+    if (sending || !checked?.ok) return;
+    const provider = W.getProvider();
+    if (typeof provider?.payLightningInvoice !== 'function') { toast(t('err.update'), 'bad', 6000); return; }
+    sending = true;
+    btn.disabled = true;
+    btn.textContent = t('save.waiting');
+    let keepOff = false;
+    try {
+      const res = await provider.payLightningInvoice({ invoice: checked.invoice });
+      const hash = typeof res?.hash === 'string' && /^[0-9a-fA-F]{64}$/.test(res.hash) ? res.hash : null;
+      const entry = { kind: 'spend', luna: 0, at: Date.now(), status: 'ok', hash: hash || undefined, sats: checked.sats || undefined };
+      goal?.entries.push(entry);
+      saveState();
+      closeSheet(true);
+      render();
+      toast(t('spend.sent'), 'good', 6000);
+      forgetWallet();
+      if (hash) {
+        const tx = await C.waitForTx(hash, { tries: 20 }).catch(() => null);
+        if (tx && Number.isSafeInteger(tx.value)) { entry.luna = tx.value; saveState(); }
+      }
+      await rereadWallet();
+      if (!sheetOpen()) render();
+      return;
+    } catch (err) {
+      const kind = W.classifyError(err);
+      if (kind === 'cancel') toast(t('toast.cancel'));
+      else if (kind === 'duplicate') { toast(t('spend.duplicate'), 'bad', 7000); keepOff = true; }
+      else if (kind === 'unknown') { toast(t('spend.unknown'), 'bad', 8000); keepOff = true; }
+      else if (kind === 'invalid' && /expired/i.test(err?.message || '')) toast(t('spend.expired'), 'bad', 6000);
+      else if (kind === 'invalid') toast(t('spend.invalid'), 'bad', 6000);
+      else walletFailure(err);
+    }
+    sending = keepOff; // after an unclear answer the same invoice is never sent twice
+    btn.textContent = t('spend.payGo');
+    btn.disabled = keepOff || !checked?.ok;
+  });
+  openSheet(t('spend.title'), h('div', { class: 'form', 'data-rig': 'ln-sheet' },
+    h('p', { class: 'small' }, t('spend.body')),
+    field(t('spend.label'), input),
+    msg,
+    btn,
+    h('p', { class: 'tiny mute' }, t('spend.note'))));
+  check();
 }
 
 function sheetWithdraw(goal) {
@@ -1120,20 +1503,53 @@ function sheetSettings() {
 
 /* ---------- group jar ---------- */
 
+/** The goal a friend was invited to, read from the chain: how much has come in and from how many wallets. */
+function jarTotals() {
+  const gifts = R.gifts || [];
+  return { total: gifts.reduce((sum, g) => sum + g.luna, 0), people: new Set(gifts.map((g) => g.from)).size };
+}
+
+function jarHero(jar, size = 140) {
+  const { total, people } = jarTotals();
+  const ratio = Math.min(1, total / jar.target);
+  return h('section', { class: 'goal-hero', 'data-rig': 'jar-hero' },
+    hexRing(ratio, size, h('div', {}, h('div', { class: 'gi' }, icon('gift', 26)), h('div', { class: 'pct' }, `${Math.floor(ratio * 100)}%`)), { width: 6 }),
+    h('p', { class: 'small mute' }, t('jar.from', { address: shortAddress(jar.owner) })),
+    h('h1', {}, jar.name),
+    h('div', { class: 'mute' }, R.gifts === null ? '…' : t('jar.progress', { amount: fmtNim(total, lang(), 0), target: nim(jar.target, 0) })),
+    R.gifts === null ? null : h('div', { class: 'tiny mute', 'data-rig': 'jar-people' }, people ? tn('jar.people', people) : t('jar.firstOne')),
+    jar.date ? h('div', { class: 'tiny mute' }, t('goal.by', { date: dateText(jar.date) })) : null);
+}
+
+function giftList() {
+  const gifts = R.gifts;
+  return h('section', { class: 'card' }, h('h3', {}, t('jar.gifts')),
+    gifts === null
+      ? h('div', { class: 'skeleton w60' })
+      : gifts.length
+        ? gifts.slice(0, 8).map((g) => h('div', { class: 'entry' },
+          h('div', {}, h('div', { class: 'small' }, g.note || t('entry.gift')), h('div', { class: 'tiny mute' }, `${day(g.at)} · ${shortAddress(g.from)}`)),
+          h('div', { class: 'entry-v' }, `+${nim(g.luna)}`)))
+        : h('p', { class: 'small mute' }, t('jar.none')));
+}
+
+/** The address of this invite as it should be shared and opened: always the short public form. */
+const jarLink = (jar) => I.inviteLink(jar, jar.owner, jar.net);
+
 function viewJar() {
   const jar = R.jar;
-  const gifts = R.gifts;
-  const total = (gifts || []).reduce((sum, g) => sum + g.luna, 0);
-  const inside = W.inHost() || DEMO;
-  const wrongNet = inside && jar.net !== R.network;
+  if (!W.inHost() && !DEMO) return viewInvite(jar);
+  const wrongNet = jar.net !== R.network;
   const mine = st.address === jar.owner || R.accounts.includes(jar.owner);
   const memoFor = (note) => J.buildMemo(jar.id, note);
   const amount = h('input', { type: 'text', inputmode: 'decimal', placeholder: '100', autocomplete: 'off', 'data-rig': 'j-amount' });
   const note = h('input', { type: 'text', maxlength: 40, placeholder: t('jar.notePh'), autocomplete: 'off', 'data-rig': 'j-note' });
   const err = h('p', { class: 'tiny bad' });
+  const fiatLine = h('p', { class: 'tiny mute', 'data-rig': 'j-fiat' });
   const btn = h('button', { class: 'btn primary wide', 'data-rig': 'j-send', disabled: Boolean(R.jarSending) }, R.jarSending ? t('save.waiting') : t('jar.send'));
   const label = () => {
     const luna = toLuna(amount.value);
+    fiatLine.textContent = luna && fiat(luna) ? `≈ ${fiat(luna)}` : '';
     if (!R.jarSending) btn.textContent = luna ? t('jar.sendAmount', { amount: nim(luna, 5) }) : t('jar.send');
   };
   amount.addEventListener('input', label);
@@ -1143,6 +1559,7 @@ function viewJar() {
     label();
   };
   const finish = async (hash, luna) => {
+    const before = jarTotals().total;
     const tx = await C.waitForTx(hash);
     await loadJarGifts();
     if (!tx) {
@@ -1153,7 +1570,7 @@ function viewJar() {
       release();
     } else {
       R.jarSending = false;
-      renderJarDone(luna);
+      renderJarDone(luna, hash, before);
     }
   };
   btn.addEventListener('click', async () => {
@@ -1194,59 +1611,120 @@ function viewJar() {
     return undefined;
   });
 
-  const giftRows = gifts === null
-    ? h('div', { class: 'skeleton w60' })
-    : gifts.length
-      ? gifts.slice(0, 8).map((g) => h('div', { class: 'entry' },
-        h('div', {}, h('div', { class: 'small' }, g.note || t('entry.gift')), h('div', { class: 'tiny mute' }, `${day(g.at)} · ${shortAddress(g.from)}`)),
-        h('div', { class: 'entry-v' }, `+${nim(g.luna)}`)))
-      : h('p', { class: 'small mute' }, t('jar.none'));
-
-  const payBox = inside
-    ? wrongNet
-      ? h('section', { class: 'card notice' }, h('div', { class: 'notice-i' }, icon('info')), h('div', { class: 'small' }, t('jar.wrongNet')))
-      : mine
-        ? h('section', { class: 'card' }, h('p', { class: 'small' }, t('jar.mine')), h('a', { class: 'btn wide', href: `${location.pathname}${DEMO ? '?demo=1' : ''}#/goal/${jar.id}` }, t('jar.open')))
-        : h('section', { class: 'card form' },
-          h('h3', {}, t('jar.addTitle')),
+  const payBox = wrongNet
+    ? h('section', { class: 'card notice' }, h('div', { class: 'notice-i' }, icon('info')), h('div', { class: 'small' }, t('jar.wrongNet')))
+    : mine
+      ? h('section', { class: 'card' }, h('p', { class: 'small' }, t('jar.mine')), h('a', { class: 'btn wide', href: `${location.pathname}${DEMO ? '?demo=1' : ''}#/goal/${jar.id}` }, t('jar.open')))
+      : h('section', { class: 'card form', 'data-rig': 'j-form' },
+        h('h3', {}, t('jar.addTitle')),
+        h('p', { class: 'small' }, t('jar.why', { name: jar.name })),
+        field(t('jar.amount'), amount),
+        fiatLine,
+        h('div', { class: 'quick' }, [100, 1000, 5000].map((n) => h('button', { type: 'button', class: 'chip-btn', onclick: () => { amount.value = String(n); label(); } }, fmtNim(n * LUNA, lang())))),
+        field(t('jar.note'), note),
+        h('p', { class: 'tiny mute' }, t('jar.public')),
+        err, btn,
+        h('details', { class: 'trust' },
+          h('summary', { class: 'tiny' }, t('jar.whereTitle')),
           h('p', { class: 'tiny mute' }, t('jar.trust')),
           h('code', { class: 'mono', 'data-rig': 'j-owner' }, jar.owner),
-          field(t('jar.amount'), amount),
-          h('div', { class: 'quick' }, [100, 1000, 5000].map((n) => h('button', { type: 'button', class: 'chip-btn', onclick: () => { amount.value = String(n); label(); } }, fmtNim(n * LUNA, lang())))),
-          field(t('jar.note'), note),
-          h('p', { class: 'tiny mute' }, t('jar.public')),
-          err, btn,
-          h('p', { class: 'tiny mute center' }, t('jar.direct')),
-          h('p', { class: 'tiny mute center' }, t('jar.countNote')))
-    : h('section', { class: 'card form' },
-      h('h3', {}, t('jar.addTitle')),
-      h('a', { class: 'btn primary wide', href: openInPay(location.href) }, t('outside.open')),
-      h('p', { class: 'small' }, t('jar.anyWallet')),
-      h('code', { class: 'mono' }, jar.owner),
-      h('p', { class: 'tiny mute' }, t('jar.withMsg')),
-      h('code', { class: 'mono' }, memoFor('')));
+          h('p', { class: 'tiny mute' }, t('jar.direct')),
+          h('p', { class: 'tiny mute' }, t('jar.countNote'))));
 
-  const ratio = Math.min(1, total / jar.target);
   return chrome(h('main', { 'data-rig': 'jar' },
-    h('section', { class: 'goal-hero' },
-      hexRing(ratio, 140, h('div', {}, h('div', { class: 'gi' }, icon('gift', 26)), h('div', { class: 'pct' }, `${nim(total, 0)}`)), { width: 6 }),
-      h('p', { class: 'small mute' }, t('jar.from', { address: shortAddress(jar.owner) })),
-      h('h1', {}, jar.name),
-      h('div', { class: 'mute' }, t('jar.target', { amount: nim(jar.target) })),
-      jar.date ? h('div', { class: 'tiny mute' }, t('goal.by', { date: dateText(jar.date) })) : null),
+    jarHero(jar),
     payBox,
-    h('section', { class: 'card' }, h('h3', {}, t('jar.gifts')), giftRows),
-    inside ? h('a', { class: 'btn wide', href: location.pathname + (DEMO ? '?demo=1' : ''), 'data-rig': 'j-own' }, t('jar.own')) : null,
+    giftList(),
+    h('a', { class: 'btn wide', href: location.pathname + (DEMO ? '?demo=1' : ''), 'data-rig': 'j-own' }, t('jar.own')),
     h('p', { class: 'tiny mute center' }, t('jar.how'))));
 }
 
-function renderJarDone(luna) {
-  root().replaceChildren(chrome(h('main', {},
-    h('section', { class: 'goal-hero' },
-      h('div', { class: 'welcome-mark' }, logo(84)),
+/**
+ * The invite in an ordinary phone or computer browser: the goal first, one button into Nimiq Pay (installed or not),
+ * what Nimiq Pay is and how to get it, and, for anyone with another Nimiq wallet, the address and the exact message.
+ */
+function viewInvite(jar) {
+  const link = jarLink(jar);
+  const memo = J.buildMemo(jar.id, '');
+  const stores = I.storeFor(PLATFORM);
+  const help = h('p', { class: 'small warn', 'data-rig': 'inv-noapp', hidden: true }, t('inv.noApp'));
+  const open = (e) => {
+    if (!PLATFORM) {
+      e.preventDefault();
+      sheetQR(link, t('inv.qrTitle'), t('inv.qrBody'));
+      return;
+    }
+    if (PLATFORM === 'ios') {
+      // No fallback on iOS: if the page is still in front a moment later, the app probably isn't installed.
+      const at = Date.now();
+      const timer = setInterval(() => {
+        if (document.hidden) { clearInterval(timer); return; }
+        if (Date.now() - at > 2500) { clearInterval(timer); help.hidden = false; help.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      }, 250);
+    }
+  };
+  const copyBtn = (text, rig) => h('button', { type: 'button', class: 'btn small', 'data-rig': rig, onclick: async () => { const ok = await copyText(text); toast(ok ? t('share.copied') : t('share.select'), ok ? 'good' : 'info'); } }, icon('link', 16), t('inv.copy'));
+  const step = (n, title, body, extra) => h('li', { class: 'step' }, h('span', { class: 'step-n' }, n), h('div', { class: 'grow' }, h('b', {}, title), h('div', { class: 'tiny mute' }, body), extra || null));
+  const storeBtn = (url) => h('a', { class: 'btn small store', href: url, target: '_blank', rel: 'noopener noreferrer', 'data-rig': url.includes('apple') ? 'store-ios' : 'store-android' },
+    url.includes('apple') ? t('inv.appStore') : t('inv.playStore'));
+  return chrome(h('main', { 'data-rig': 'invite' },
+    jarHero(jar, 128),
+    h('section', { class: 'card form inv-cta' },
+      h('p', { class: 'small' }, t('inv.ask', { name: jar.name })),
+      h('a', { class: 'btn primary wide', href: I.openInPayLink(link, PLATFORM), onclick: open, 'data-rig': 'open-pay' }, t('inv.open')),
+      help,
+      h('p', { class: 'tiny mute center' }, PLATFORM ? t('inv.openNote') : t('inv.desktopNote'))),
+    h('section', { class: 'card', 'data-rig': 'inv-new' },
+      h('h3', {}, t('inv.newTitle')),
+      h('p', { class: 'small' }, t('inv.what')),
+      h('ol', { class: 'steps' },
+        step(1, t('inv.s1'), t('inv.s1b'), h('div', { class: 'stores' }, stores.map(storeBtn))),
+        step(2, t('inv.s2'), t('inv.s2b')),
+        step(3, t('inv.s3'), t('inv.s3b', { name: jar.name })))),
+    giftList(),
+    h('details', { class: 'card trust', 'data-rig': 'inv-other' },
+      h('summary', { class: 'small' }, t('inv.otherTitle')),
+      h('p', { class: 'tiny mute' }, t('inv.otherBody')),
+      h('div', { class: 'copy-row' }, h('code', { class: 'mono grow', 'data-rig': 'inv-owner' }, jar.owner), copyBtn(jar.owner.replace(/\s/g, ''), 'inv-copy-addr')),
+      h('p', { class: 'tiny mute' }, t('jar.withMsg')),
+      h('div', { class: 'copy-row' }, h('code', { class: 'mono grow', 'data-rig': 'inv-memo' }, memo), copyBtn(memo, 'inv-copy-memo')),
+      h('p', { class: 'tiny mute' }, t('jar.trust'))),
+    h('p', { class: 'tiny mute center' }, t('inv.foot')),
+    h('p', { class: 'center small' }, h('a', { href: APP_URL, 'data-rig': 'inv-about' }, t('inv.about')))));
+}
+
+/** After a friend's gift is mined: the goal moves, the proof, and a reason to start their own. */
+function renderJarDone(luna, hash, before = 0) {
+  const jar = R.jar;
+  const { total, people } = jarTotals();
+  const after = Math.max(total, before + luna);
+  const from = Math.min(1, before / jar.target);
+  const to = Math.min(1, after / jar.target);
+  const ring = hexRing(to, 132, h('div', {}, h('div', { class: 'gi' }, icon('gift', 24)), h('div', { class: 'pct' }, `${Math.floor(to * 100)}%`)), { width: 7 });
+  const arc = ring.querySelectorAll('path')[1];
+  if (arc && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    arc.setAttribute('stroke-dasharray', `${(from * 100).toFixed(2)} 100`);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      arc.style.transition = 'stroke-dasharray .9s cubic-bezier(.2, 0, 0, 1)';
+      arc.setAttribute('stroke-dasharray', `${(to * 100).toFixed(2)} 100`);
+    }));
+  }
+  const base = location.pathname + (DEMO ? '?demo=1' : '');
+  const ideas = [t('idea.emergency'), t('idea.phone'), t('idea.school'), t('idea.trip')];
+  root().replaceChildren(chrome(h('main', { 'data-rig': 'thanks' },
+    h('section', { class: 'goal-hero thanks' },
+      h('div', { class: 'party', 'aria-hidden': 'true' }, Array.from({ length: 10 }, (_, i) => h('span', { class: `bit b${i}` })), ring),
+      h('div', { class: 'plus', 'data-rig': 'thanks-plus' }, `+${nim(luna)}`),
       h('h1', {}, t('jar.thanks')),
-      h('p', { class: 'mute' }, t('jar.thanksBody', { amount: nim(luna), name: R.jar.name }))),
-    h('a', { class: 'btn primary wide', href: location.pathname + (DEMO ? '?demo=1' : ''), 'data-rig': 'j-own' }, t('jar.own')))));
+      h('p', { class: 'mute' }, t('jar.thanksBody', { amount: nim(luna), name: jar.name })),
+      h('p', { class: 'small', 'data-rig': 'thanks-total' }, t('jar.progress', { amount: fmtNim(after, lang(), 0), target: nim(jar.target, 0) }), people ? ` · ${tn('jar.people', people)}` : ''),
+      /^[0-9a-fA-F]{64}$/.test(hash || '') ? h('a', { class: 'tiny', href: C.explorerTx(hash), target: '_blank', rel: 'noopener noreferrer', 'data-rig': 'thanks-proof' }, t('entry.proof')) : null),
+    h('section', { class: 'card own-goal', 'data-rig': 'thanks-own' },
+      h('h3', {}, t('thanks.ownTitle')),
+      h('p', { class: 'small' }, t('thanks.ownBody')),
+      h('div', { class: 'ideas' }, ideas.map((name) => h('a', { class: 'chip-btn', href: `${base}#/new/${encodeURIComponent(name)}` }, name))),
+      h('a', { class: 'btn primary wide', href: `${base}#/new/`, 'data-rig': 'j-own' }, t('jar.own'))),
+    h('button', { class: 'btn wide', 'data-rig': 'thanks-pass', onclick: async () => { const ok = await copyText(t('share.msgFriend', { name: jar.name, link: jarLink(jar) })); toast(ok ? t('share.copiedMsg') : t('share.select'), ok ? 'good' : 'info'); } }, icon('share', 18), t('thanks.pass')))));
 }
 
 async function loadJarGifts() {
@@ -1260,10 +1738,6 @@ async function loadJarGifts() {
 }
 
 /* ---------- outside the app ---------- */
-
-function openInPay(url) {
-  return `nimiqpay://miniapp?url=${encodeURIComponent(url)}`;
-}
 
 /** A normal browser shows the static landing page from index.html; the app root stays empty. False if it isn't there. */
 function showLanding() {
@@ -1290,7 +1764,7 @@ function viewOutside() {
       h('div', { class: 'welcome-mark' }, logo(84)),
       h('h1', {}, t('welcome.title')),
       h('p', { class: 'lead' }, t('outside.sub')),
-      h('a', { class: 'btn primary wide', href: openInPay(location.href), 'data-rig': 'open-pay' }, t('outside.open')),
+      h('a', { class: 'btn primary wide', href: I.openInPayLink(APP_URL, PLATFORM), 'data-rig': 'open-pay' }, t('outside.open')),
       h('p', { class: 'small center' }, t('outside.manual')),
       h('code', { class: 'mono center' }, APP_URL),
       h('a', { class: 'btn wide', href: `${location.pathname}?demo=1`, 'data-rig': 'demo' }, t('outside.demo')),
@@ -1305,9 +1779,19 @@ const VIEW_IN_MS = 200; // matches .view-in in app.css
 function render() {
   const el = root();
   const scroll = window.scrollY;
-  const hash = location.hash;
+  let hash = location.hash;
   let view;
   let kind; // which screen this is, for the entrance below
+  if (hash.startsWith('#/new') && !R.jar) {
+    // From a friend's thank-you screen: open the new goal form, with the idea they tapped filled in.
+    let idea = '';
+    try { idea = J.cleanText(decodeURIComponent(hash.slice(6)), 40); } catch { idea = ''; }
+    R.openNew = idea;
+    history.replaceState(null, '', `${location.pathname}${location.search}#/`);
+    hash = '#/';
+  }
+  if (!hash.startsWith('#/goal/') || R.banner?.id !== hash.slice(7)) R.banner = null;
+  checkMarks();
   if (R.jar) { view = viewJar(); kind = 'jar'; }
   else if (!W.inHost() && !DEMO) {
     if (showLanding()) return;
@@ -1337,6 +1821,56 @@ function render() {
   if (el.dataset.hash === hash) window.scrollTo(0, scroll);
   else window.scrollTo(0, 0);
   el.dataset.hash = hash;
+  afterRender(kind);
+}
+
+/**
+ * Progress moments. A goal passing 25, 50 or 75% gets a banner on its page; reaching 100% gets the celebration sheet,
+ * once. Goals from before marks existed start from where they stand, so nothing old is celebrated as new.
+ */
+function checkMarks() {
+  if (R.jar || !st.address || R.staker === undefined) return; // wait for the stake, or rewards would look like new progress
+  let changed = false;
+  for (const goal of openGoals()) {
+    const ratio = goalProgress(goal).ratio;
+    if (!Array.isArray(goal.marks)) {
+      goal.marks = G.passedMarks(ratio);
+      if (ratio >= 1 && !goal.reachedAt) goal.reachedAt = Date.now();
+      changed = true;
+      continue;
+    }
+    if (hasPending()) continue; // celebrate confirmed money only
+    const mark = G.newMark(goal, ratio);
+    if (!mark) continue;
+    goal.marks = G.MARKS.filter((m) => m <= mark || goal.marks.includes(m));
+    changed = true;
+    if (mark === 100) {
+      if (!goal.reachedAt) goal.reachedAt = Date.now();
+      R.celebrate = goal.id;
+    } else {
+      R.banner = { id: goal.id, mark };
+      toast(t(`mark.${mark}`), 'good', 4500);
+    }
+  }
+  if (changed) saveState();
+}
+
+function afterRender(kind) {
+  if (sheetOpen()) return;
+  if (R.celebrate) {
+    const goal = findGoal(R.celebrate);
+    R.celebrate = null;
+    if (goal && !goal.closedAt) {
+      if (kind !== `#/goal/${goal.id}`) location.hash = `#/goal/${goal.id}`;
+      sheetReached(goal);
+      return;
+    }
+  }
+  if (R.openNew !== undefined && st.address && kind === 'home') {
+    const idea = R.openNew;
+    R.openNew = undefined;
+    sheetGoal(null, idea);
+  }
 }
 
 function fatal() {
@@ -1358,9 +1892,9 @@ async function boot() {
   R.fiat = W.hostFiat();
   C.useNetwork(R.network);
 
-  const jarParam = params.get('jar');
-  if (jarParam) {
-    R.jar = J.decodeJar(jarParam);
+  const invite = J.readInvite(params);
+  if (invite.given) {
+    R.jar = invite.jar;
     if (R.jar && !W.inHost() && !DEMO) {
       R.network = R.jar.net;
       C.useNetwork(R.network);
@@ -1384,6 +1918,7 @@ async function boot() {
     } catch {
       return fatal();
     }
+    W.onAccountsChanged(accountsChanged);
   }
   if (R.jar) {
     await loadJarGifts();

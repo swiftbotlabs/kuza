@@ -5,36 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1f2348">
 <meta name="color-scheme" content="light">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-0UO4X7OAERudQuYkR7O9uXUqgfgpA5Q0tRudCxJKr00='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rpc.nimiqwatch.com https://rpc.testnet.nimiqwatch.com https://kuza-api.swiftbotlab.workers.dev; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-YNUqzv2tA5jEzBSKOtvyPggmSlGtPaRYujLvJWBT6DY='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rpc.nimiqwatch.com https://rpc.testnet.nimiqwatch.com https://kuza-api.swiftbotlab.workers.dev; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Kuza</title>
 <meta name="description" content="Savings goals that grow in your own NIM stake. Non-custodial, inside Nimiq Pay.">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
-<meta name="page-type" content="software">
-<meta name="site-kind" content="software">
 <meta name="page-type" content="software">
 <meta name="site-kind" content="software">
 <meta property="og:title" content="Kuza: savings goals in your own NIM stake">
@@ -45,7 +19,7 @@
 <!-- Inside Nimiq Pay (its globals exist from document start), in the demo and on a gift link this marks the page as the app,
      so the landing page below never paints there and its styles are never fetched. Elsewhere it restores the saved light or
      dark theme and loads the landing styles (site.css) before the first paint. Its hash is in the CSP above. -->
-<script>(function(){var w=window,d=document;if(w.nimiq||w.nimiqPay||w.__NIMIQ_PAY__||/[?&](demo=1(&|$)|jar=)/.test(location.search)){d.documentElement.classList.add('app');return}try{var t=localStorage.getItem('kuza.theme');if(t==='dark'||t==='light')d.documentElement.setAttribute('data-theme',t)}catch(e){}d.write('<link rel="preload" href="fonts/fraunces-kz.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="fonts/figtree-latin-wght.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="site.css">')})();</script>
+<script>(function(){var w=window,d=document;if(w.nimiq||w.nimiqPay||w.__NIMIQ_PAY__||/[?&](demo=1(&|$)|jar=|j=)/.test(location.search)){d.documentElement.classList.add('app');return}try{var t=localStorage.getItem('kuza.theme');if(t==='dark'||t==='light')d.documentElement.setAttribute('data-theme',t)}catch(e){}d.write('<link rel="preload" href="fonts/fraunces-kz.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="fonts/figtree-latin-wght.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="site.css">')})();</script>
 <link rel="icon" href="img/icon.png" type="image/png">
 <!-- Every module the app imports, so the browser fetches them all at once instead of one level of imports per round trip. -->
 <link rel="modulepreload" href="js/app.js">
@@ -58,6 +32,10 @@
 <link rel="modulepreload" href="js/wallet.js">
 <link rel="modulepreload" href="js/api.js">
 <link rel="modulepreload" href="js/nudge.js">
+<link rel="modulepreload" href="js/invite.js">
+<link rel="modulepreload" href="js/rewards.js">
+<link rel="modulepreload" href="js/spend.js">
+<link rel="modulepreload" href="js/qr.js">
 <link rel="modulepreload" href="js/ui.js">
 <link rel="modulepreload" href="js/vendor/mini-app-sdk.js">
 <link rel="modulepreload" href="js/vendor/chunk-JZHZSOY3.js">
@@ -172,7 +150,7 @@
         <li class="lp-step" data-n="1">
           <span class="lp-node" aria-hidden="true"><svg class="lp-i"><use href="#i-seed"/></svg></span>
           <h3 class="lp-h3"><span class="lp-step-n">1</span>Set a goal</h3>
-          <p>A name, a target, a date and a weekly plan. Kuza suggests the weekly amount and the first saving from what is in your wallet.</p>
+          <p>A name, a target, a date and a plan per week or per month. Kuza suggests the amount, the first saving from what is in your wallet, and shows the next saving and whether you’re on plan.</p>
         </li>
         <li class="lp-step" data-n="2">
           <span class="lp-node" aria-hidden="true"><svg class="lp-i"><use href="#i-seed"/></svg></span>
@@ -182,7 +160,7 @@
         <li class="lp-step" data-n="3">
           <span class="lp-node" aria-hidden="true"><svg class="lp-i"><use href="#i-seed"/></svg></span>
           <h3 class="lp-h3"><span class="lp-step-n">3</span>Friends chip in</h3>
-          <p>Share an invite link. A friend pays your own address directly, with a note in the transaction, and Kuza counts it toward the goal.</p>
+          <p>Share an invite link, a message or a QR code. A friend pays your own address directly from Nimiq Pay, with a note in the transaction, and Kuza counts it toward the goal. Friends without Nimiq Pay get one button to install it.</p>
         </li>
       </ol>
     </div>

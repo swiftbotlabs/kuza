@@ -48,6 +48,7 @@ function mine(fields) {
 }
 
 const fail = (message) => Object.assign(new Error(message), { type: 'INTERNAL_ERROR', code: -32603 });
+const listeners = new Map();
 
 const provider = {
   isConsensusEstablished: async () => true,
@@ -59,11 +60,22 @@ const provider = {
   },
   listAccounts: async () => {
     // Opening someone's invite link means being the friend, so the pretend wallet changes hands.
-    const me = location.search.includes('jar=') ? FRIEND : ME;
+    const me = /[?&](jar|j)=/.test(location.search) ? FRIEND : ME;
     await ask('Connect to Kuza', [`See your address ${me.slice(0, 9)}…`]);
     return [me];
   },
   disconnect() {},
+  on(event, fn) {
+    if (!listeners.has(event)) listeners.set(event, []);
+    listeners.get(event).push(fn);
+  },
+  async payLightningInvoice({ invoice }) {
+    await ask('Pay with Bitcoin Lightning', [`${String(invoice).slice(0, 26)}…`, 'Pay with: NIM', 'Pretend swap, pretend shop.']);
+    chain.pays = (chain.pays || 0) + 1;
+    const value = 4200 * LUNA;
+    chain.wallet -= value;
+    return { hash: mine({ to: 'NQ44 DEMA 0000 0000 0000 0000 0000 0000 0009', value }), swapId: 'demo-swap' };
+  },
   async sendNewStakerTransaction({ delegation, value }) {
     await ask('Confirm Transaction', ['Create Staker', `${value / LUNA} NIM`]);
     chain.creates = (chain.creates || 0) + 1;
@@ -139,10 +151,12 @@ export function install() {
   });
   setInterval(() => {
     chain.height += 1;
-    if (chain.staker && chain.staker.balance) chain.staker.balance += Math.ceil(chain.staker.balance * 2.5e-9);
+    if (chain.staker && chain.staker.balance && !chain.noGrowth) chain.staker.balance += Math.ceil(chain.staker.balance * 2.5e-9);
   }, 1000);
   window.__kuzaDemo = {
     skipCooling() { chain.height += 2 * BLOCKS_PER_EPOCH; },
+    reward(luna) { if (chain.staker) chain.staker.balance += luna; },
+    emit(event, ...args) { for (const fn of listeners.get(event) || []) fn(...args); },
     chain,
     failNext(type, code, message, data) { chain.failNext = Object.assign(new Error(message), { type, code, data }); },
     gift(luna, memo) {
