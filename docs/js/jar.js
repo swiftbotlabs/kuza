@@ -12,8 +12,20 @@ const NOBODY = new Set([STAKING_CONTRACT, 'NQ07 0000 0000 0000 0000 0000 0000 00
 export function cleanText(input, maxChars) {
   if (typeof input !== 'string') return '';
   // Control, format and bidi characters and blank look-alikes have no place in a name or a public note.
-  const noCtl = input.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u115F\u1160\u3164\uFFA0]/gu, ' ');
+  const noCtl = input.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u115F\u1160\u2800\u3164\uFFA0]/gu, ' ');
   return [...noCtl.replace(/\s+/g, ' ').trim()].slice(0, maxChars).join('');
+}
+
+/**
+ * Anything that reads like a web address. A goal name and a gift note are shown to strangers (on the invite page, in a
+ * shared message), so neither may carry a link someone else could plant there.
+ */
+export const URLISH = /(:\/\/|www\.|[a-z0-9-]{2,}\.[a-z]{2,})/i;
+
+/** A goal name as it may be shown: cleaned, with at least one letter or digit, and nothing that reads like a link. */
+export function cleanName(input) {
+  const name = cleanText(input, 40);
+  return name && /[\p{L}\p{N}]/u.test(name) && !URLISH.test(name) ? name : '';
 }
 
 function b64urlEncode(text) {
@@ -43,7 +55,7 @@ export function decodeJar(param) {
   }
   if (!o || typeof o !== 'object' || o.v !== 1) return null;
   const owner = normalizeAddress(o.a);
-  const name = cleanText(o.n, 40);
+  const name = cleanName(o.n);
   if (!owner || NOBODY.has(owner) || !name || typeof o.i !== 'string' || !ID_RE.test(o.i)) return null;
   if (!Number.isSafeInteger(o.t) || o.t <= 0 || o.t > 21e14) return null;
   if (o.d !== null && o.d !== undefined && (typeof o.d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(o.d) || Number.isNaN(Date.parse(`${o.d}T12:00:00Z`)))) return null;
@@ -80,7 +92,7 @@ export function decodeInvite(param) {
   }
   let name;
   try {
-    name = cleanText(b64urlDecode(m[6]), 40);
+    name = cleanName(b64urlDecode(m[6]));
   } catch {
     return null;
   }
@@ -106,7 +118,9 @@ export function buildMemo(id, note) {
 export function parseMemo(hex) {
   const text = hexToText(hex);
   const m = /^KZ1\|([a-z2-9]{6})\|?(.*)$/s.exec(text);
-  return m ? { id: m[1], note: cleanText(m[2], 60) } : null;
+  if (!m) return null;
+  const note = cleanText(m[2], 60);
+  return { id: m[1], note: URLISH.test(note) ? '' : note }; // anyone can pay 1 NIM with a note: no links shown
 }
 
 /**

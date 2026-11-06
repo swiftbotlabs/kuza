@@ -272,7 +272,7 @@ function cleanEntry(e) {
 
 /** Validate a stored state blob; drop anything that doesn't look right. */
 export function sanitizeState(raw) {
-  const out = { v: 1, address: null, accounts: [], baseline: null, goals: [], validator: null, seen: false, noCount: false, lang: null, op: null, unstake: null, rewards: null };
+  const out = { v: 1, address: null, accounts: [], baseline: null, goals: [], validator: null, seen: false, noCount: false, lang: null, op: null, unstake: null, rewards: null, lnTried: [], stakeCache: {} };
   if (!raw || typeof raw !== 'object' || raw.v !== 1) return out;
   if (typeof raw.address === 'string') out.address = raw.address;
   if (Number.isSafeInteger(raw.baseline) && raw.baseline >= 0) out.baseline = raw.baseline;
@@ -285,6 +285,17 @@ export function sanitizeState(raw) {
     if (Number.isSafeInteger(raw.unstake.removing)) out.unstake.removing = raw.unstake.removing;
   }
   out.noCount = raw.noCount === true;
+  // Lightning invoices already handed to the wallet (SHA-256 only), so the same one is never paid twice from Kuza.
+  if (Array.isArray(raw.lnTried)) out.lnTried = raw.lnTried.filter((x) => typeof x === 'string' && /^[0-9a-f]{64}$/.test(x)).slice(-50);
+  // Stake movements of old payment accounts, summed: those accounts never change again, so they're read once.
+  if (raw.stakeCache && typeof raw.stakeCache === 'object' && !Array.isArray(raw.stakeCache)) {
+    for (const [addr, v] of Object.entries(raw.stakeCache).slice(0, 60)) {
+      const ok = (n) => Number.isSafeInteger(n) && n >= 0;
+      if (typeof addr === 'string' && addr.length <= 64 && v && ok(v.deposits) && ok(v.withdrawals) && ok(v.doubtful) && ok(v.count)) {
+        out.stakeCache[addr] = { deposits: v.deposits, withdrawals: v.withdrawals, doubtful: v.doubtful, count: v.count };
+      }
+    }
+  }
   if (Array.isArray(raw.accounts)) out.accounts = raw.accounts.filter((a) => typeof a === 'string' && a.length <= 64).slice(0, 4);
   if (raw.rewards && typeof raw.rewards === 'object' && Number.isSafeInteger(raw.rewards.last) && raw.rewards.last >= 0) {
     const events = Array.isArray(raw.rewards.events) ? raw.rewards.events : [];

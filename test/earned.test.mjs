@@ -33,21 +33,30 @@ test('fixture is the real wallet: 1,100 NIM staked, the staker bytes match the a
   assert.equal(addressHex('nonsense'), null);
 });
 
+/** The ledger as the app reads it: per-account sums over the wallet and the payment accounts it funded. */
+const flowsOf = (owner) => (txs, more) => RW.stakeFlows(txs, owner, more);
+
 test('real mainnet history: deposits 1,160, withdrawals 60, Earned 0 (the 100 NIM gift is a deposit, not a reward)', async () => {
-  C.useBackend(node());
+  const asked = [];
+  C.useBackend((m, p) => { asked.push(p[0]); return node()(m, p); });
   try {
-    const txs = await C.walletStakeHistory(NQ32, [NQ32, NOW_HTLC]);
-    const flows = RW.stakeFlows(txs, NQ32, [NQ32, NOW_HTLC]);
+    const { flows, keep } = await C.stakeLedger(NQ32, [NQ32, NOW_HTLC], {}, flowsOf(NQ32), C.readBudget());
     assert.deepEqual(flows, { deposits: 1160 * NIM, withdrawals: 60 * NIM, doubtful: 0, count: 4 });
     assert.equal(RW.provenEarned(STAKE, flows), 0);
     // The pool's first payout of 0.5 NIM lands in the stake: that, and only that, is Earned.
     assert.equal(RW.provenEarned(STAKE + 50000, flows), 50000);
     // The payment accounts were found from the wallet's own funding transactions, not from local notes.
-    const hashes = new Set(txs.map((t) => t.hash));
-    for (const h of ['4154661745fa442c9c4dc3963ca1002de00405d063934b60e3e34e468e5ffc8e', 'f196139159689150dd50ef37cee031f53bc66e7c16220e7db5fc5351139a9140']) assert.ok(hashes.has(h), h);
+    assert.deepEqual(new Set(asked), new Set([NQ32, NQ43, NQ50, NOW_HTLC]));
+    // Old payment accounts are summed once and kept; the current one never is.
+    assert.deepEqual(Object.keys(keep).sort(), [NQ43, NQ50].sort());
+    // Next open: the kept sums stand in for the old accounts, so only the wallet and the current account are read.
+    asked.length = 0;
+    const again = await C.stakeLedger(NQ32, [NQ32, NOW_HTLC], keep, flowsOf(NQ32), C.readBudget());
+    assert.deepEqual(again.flows, flows);
+    assert.deepEqual(asked.sort(), [NQ32, NOW_HTLC].sort());
     // The wallet's account list at Connect time doesn't matter: the funding transactions lead to every payment account.
-    const bare = await C.walletStakeHistory(NQ32, []);
-    assert.equal(RW.provenEarned(STAKE, RW.stakeFlows(bare, NQ32, [])), 0);
+    const bare = await C.stakeLedger(NQ32, [], {}, flowsOf(NQ32), C.readBudget());
+    assert.equal(RW.provenEarned(STAKE, bare.flows), 0);
   } finally {
     C.useBackend(null);
   }
@@ -56,13 +65,30 @@ test('real mainnet history: deposits 1,160, withdrawals 60, Earned 0 (the 100 NI
 test('a payment account that can\'t be read makes the whole answer unknown, never a guess', async () => {
   C.useBackend(node(new Set([NQ50])));
   try {
-    await assert.rejects(C.walletStakeHistory(NQ32, [NQ32]));
+    await assert.rejects(C.stakeLedger(NQ32, [NQ32], {}, flowsOf(NQ32), C.readBudget()));
   } finally {
     C.useBackend(null);
   }
   // Had it been skipped silently, the gift would have shown as a 100 NIM reward: the overclaim this guards against.
   const partial = [...FIX.history[NQ32], ...FIX.history[NQ43]];
   assert.equal(RW.provenEarned(STAKE, RW.stakeFlows(partial, NQ32)), 100 * NIM);
+});
+
+test('the read stays inside its budget: requests, accounts, pages and time', async () => {
+  let calls = 0;
+  C.useBackend((m, p) => { calls++; return node()(m, p); });
+  try {
+    await assert.rejects(C.stakeLedger(NQ32, [NQ32], {}, flowsOf(NQ32), C.readBudget({ requests: 3 })), /budget/);
+    assert.ok(calls <= 3, `calls ${calls}`);
+    await assert.rejects(C.stakeLedger(NQ32, [NQ32], {}, flowsOf(NQ32), C.readBudget({ accounts: 2 })), /too many accounts/);
+    await assert.rejects(C.stakeLedger(NQ32, [NQ32], {}, flowsOf(NQ32), C.readBudget({ ms: -1 })), /budget/);
+    // The default budget reads this wallet in 4 requests.
+    calls = 0;
+    await C.stakeLedger(NQ32, [NQ32], {}, flowsOf(NQ32), C.readBudget());
+    assert.equal(calls, 4);
+  } finally {
+    C.useBackend(null);
+  }
 });
 
 test('a full page of history that can\'t be paged further is unknown', async () => {

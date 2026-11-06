@@ -23,7 +23,10 @@ const decodeQR = (file) => {
   try { return execFileSync('zbarimg', ['--raw', '-q', '-Sbinary', file], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).replace(/\n$/, ''); } catch { return ''; }
 };
 const capture = (t) => t.eval('(() => { window.__copied = null; navigator.clipboard.writeText = async (x) => { window.__copied = x; }; return true; })()');
-const still = (t) => t.eval('window.__kuzaDemo.chain.noGrowth = true');
+const still = async (t) => {
+  for (let i = 0; i < 80 && !(await t.eval('!!window.__kuzaDemo')); i++) await sleep(100); // the demo loads after boot
+  return t.eval('window.__kuzaDemo.chain.noGrowth = true');
+};
 const state = (t) => t.eval(`JSON.parse(localStorage.getItem('kuza.demo.mainnet'))`);
 
 async function main() {
@@ -57,6 +60,12 @@ async function main() {
     await sleep(250);
 
     await t.click('[data-rig=new-goal]');
+    await t.fill('[data-rig=f-name]', 'Claim at claim-now.top');
+    await t.fill('[data-rig=f-target]', '400');
+    await t.click('[data-rig=f-submit]');
+    await t.waitText('Leave web addresses out of the name', 4000);
+    check('goal form: a name that reads like a web address is refused', (await state(t)).goals.length === 0);
+    await t.shot(`${SHOTS}/v3-01b-name-refused.png`);
     await t.fill('[data-rig=f-name]', 'Laptop');
     await t.fill('[data-rig=f-target]', '400');
     await t.click('[data-rig=f-every-month]');
@@ -119,9 +128,17 @@ async function main() {
     await t.click('[data-rig=sheet-close]');
     await sleep(250);
     await t.eval('window.__kuzaDemo.chain.historyFails = false');
+    // A failed read is retried after a pause (30 s first), not at once: no hammering the public node.
     await t.eval('document.dispatchEvent(new Event("visibilitychange"))');
-    await t.waitText('+0.695 NIM', 8000);
-    check('history readable again: Earned proven again (0.495 + 0.2)', true);
+    await sleep(1500);
+    check('history readable again: no instant retry (backoff)', (await t.eval(`document.querySelector('[data-rig=earned-v]').textContent`)) === 'not known yet');
+    let back = false;
+    for (let i = 0; i < 25 && !back; i++) {
+      await sleep(2500);
+      await t.eval('document.dispatchEvent(new Event("visibilitychange"))');
+      back = (await t.text()).includes('+0.695 NIM');
+    }
+    check('history readable again: Earned proven again after the pause (0.495 + 0.2)', back);
 
     // ---------- B. Sharing ----------
     await t.eval(`document.querySelector('.card.goal').click()`);
@@ -182,18 +199,51 @@ async function main() {
     await t.waitText('Payment submitted', 6000);
     await t.waitText('Paid a Lightning invoice · 250,000 sats', 6000);
     check('invoice: paid once, booked in the goal', (await t.eval('window.__kuzaDemo.chain.pays')) === 1);
-    // The same invoice again: the wallet says duplicate, the button stays off.
-    await t.click('[data-rig=r-use]');
-    await t.waitFor('[data-rig=use-sheet]');
-    await t.click('[data-rig=use-pay]');
-    await t.waitFor('[data-rig=ln-sheet]');
-    await t.fill('[data-rig=ln-input]', `lnbc2500u1${BODY}`);
-    await t.eval(`window.__kuzaDemo.failNext('DUPLICATE_PAYMENT', undefined, 'This Lightning invoice was already submitted or may still be pending')`);
-    await t.click('[data-rig=ln-pay]');
-    await t.waitText('Pay with Bitcoin Lightning');
+    // The same invoice in a new sheet (closed and reopened) and after a reload: refused without asking the wallet again.
+    const payAgain = async (invoice) => {
+      await t.click('[data-rig=r-use]');
+      await t.waitFor('[data-rig=use-sheet]');
+      await t.click('[data-rig=use-pay]');
+      await t.waitFor('[data-rig=ln-sheet]');
+      await t.fill('[data-rig=ln-input]', invoice);
+      await t.click('[data-rig=ln-pay]');
+      await sleep(900);
+      const asked = (await t.text()).includes('Pay with Bitcoin Lightning');
+      return asked;
+    };
+    const askedAgain = await payAgain(`LNBC2500U1${BODY.toUpperCase()}`);
+    await t.shot(`${SHOTS}/v3-09b-invoice-refused.png`);
+    check('invoice: reopened sheet, same invoice -> refused, the wallet is not asked again', !askedAgain && (await t.text()).includes("Don't pay it again") && (await t.eval('window.__kuzaDemo.chain.pays')) === 1);
+    await t.click('[data-rig=sheet-close]');
+    await sleep(250);
+    await t.eval('location.reload()');
+    await sleep(1500);
+    await still(t);
+    await t.waitFor('[data-rig=r-use]', 8000);
+    check('invoice: after a reload it is still refused', !(await payAgain(`lnbc2500u1${BODY}`)) && (await t.eval('window.__kuzaDemo.chain.pays || 0')) === 0);
+    await t.click('[data-rig=sheet-close]');
+    await sleep(250);
+    // Cancelled in the wallet: nothing went out, so the same invoice may be tried again.
+    const B = `lnbc10u1${BODY.replace('qqqsyqcyq5', 'qqqsyqcyq6')}`;
+    check('invoice: first try of a new invoice asks the wallet', await payAgain(B));
+    await t.click('[data-rig=demo-no]');
+    await t.waitText('Nothing was sent');
+    await t.click('[data-rig=sheet-close]');
+    await sleep(250);
+    check('invoice: after a cancel the same invoice can be tried again', await payAgain(B));
+    await t.click('[data-rig=demo-no]');
+    await sleep(300);
+    await t.click('[data-rig=sheet-close]');
+    await sleep(250);
+    // An unclear outcome may have paid: never asked again.
+    const Cv = `lnbc20u1${BODY.replace('qqqsyqcyq5', 'qqqsyqcyq7')}`;
+    await t.eval(`window.__kuzaDemo.failNext('TRANSACTION_OUTCOME_UNKNOWN', -32001, 'outcome unknown', {})`);
+    await payAgain(Cv);
     await t.click('[data-rig=demo-yes]');
-    await t.waitText("Don't pay it again", 6000);
-    check('invoice: duplicate stops, never sent twice', (await lnOff()) && (await t.eval('window.__kuzaDemo.chain.pays')) === 1);
+    await t.waitText("Don't pay this invoice again", 6000);
+    await t.click('[data-rig=sheet-close]');
+    await sleep(250);
+    check('invoice: after an unclear outcome the wallet is not asked again', !(await payAgain(Cv)));
     await t.click('[data-rig=sheet-close]');
     await sleep(250);
 
@@ -203,13 +253,14 @@ async function main() {
     await t.fill('[data-rig=f-name]', 'Trip');
     await t.fill('[data-rig=f-target]', '2000');
     await t.shot(`${SHOTS}/v3-10-next-goal.png`);
-    const stakeBefore = await t.eval('window.__kuzaDemo.chain.staker.balance');
+    const stakeBefore = await t.eval('window.__kuzaDemo.chain.staker?.balance ?? 0');
+    const histBefore = await t.eval('window.__kuzaDemo.chain.history.length');
     await t.click('[data-rig=f-submit]');
     await t.waitText('Moved from Laptop', 6000);
     const s1 = await state(t);
     const trip = s1.goals.find((g) => g.name === 'Trip');
     const laptop = s1.goals.find((g) => g.name === 'Laptop');
-    check('next goal: stake counted, no transaction, old goal closed', trip.entries[0].kind === 'assign' && trip.entries[0].luna === 400e5 && laptop.closedAt > 0 && (await t.eval('window.__kuzaDemo.chain.staker.balance')) === stakeBefore);
+    check('next goal: stake counted, no transaction, old goal closed', trip.entries[0].kind === 'assign' && trip.entries[0].luna === 400e5 && laptop.closedAt > 0 && (await t.eval('window.__kuzaDemo.chain.staker?.balance ?? 0')) === stakeBefore);
     await t.shot(`${SHOTS}/v3-11-moved.png`);
     await t.eval('location.hash = "#/"');
     await t.waitFor('[data-rig=done-goals]');
@@ -241,6 +292,11 @@ async function main() {
     await t.go(`${base}?demo=1&lang=en&j=${v}`);
     await t.waitText('Add to this goal');
     check('friend: first-gift line', (await t.text()).includes('Be the first to chip in'));
+    check('friend: the "only pay if you know who sent this" warning and the full address sit above the amount, not behind a tap', await t.eval(`(() => {
+      const o = document.querySelector('[data-rig=j-owner]'); const a = document.querySelector('[data-rig=j-amount]'); const w = document.querySelector('[data-rig=j-trust]');
+      return !!o && !!a && !!w && o.getClientRects().length > 0 && w.getClientRects().length > 0 && !o.closest('details') && !w.closest('details')
+        && !!(o.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(w.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING)
+        && o.textContent.includes('${OWNER}') && w.textContent.includes('Only pay if you know'); })()`));
     await t.fill('[data-rig=j-amount]', '100');
     await t.fill('[data-rig=j-note]', 'For the trip');
     await t.shot(`${SHOTS}/v3-14-friend.png`);
@@ -267,6 +323,16 @@ async function main() {
 
     // ---------- F. The invite in an ordinary browser ----------
     const a = await tab({ ua: ANDROID });
+    const { decodeInvite } = await import('../../docs/js/jar.js');
+    const gid = decodeInvite(v).id;
+    const hexOf = (x) => [...new TextEncoder().encode(x)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const giftTx = (n, from, value, note) => ({ hash: String(n).repeat(64).slice(0, 64), from, to: OWNER, value, recipientData: hexOf(`KZ1|${gid}|${note}`), executionResult: true, timestamp: Date.now() - n * 1e6, blockNumber: 1 });
+    await a.fakeRpc((method, params) => {
+      if (method === 'getTransactionsByAddress' && params[0] === OWNER) {
+        return [giftTx(1, 'NQ22 DEMA 0000 0000 0000 0000 0000 0000 0002', 500000, 'claim at evil.example'), giftTx(2, 'NQ80 UUAS BU0Q 6Q5B 17C7 E245 DNST 92Q1 65NG', 300000, 'Happy birthday')];
+      }
+      throw new Error(`not in this test: ${method}`);
+    });
     await a.go(`${base}?j=${v}`, 1500);
     await a.waitFor('[data-rig=invite]');
     const href = await a.eval(`document.querySelector('[data-rig=open-pay]').getAttribute('href')`);
@@ -277,6 +343,12 @@ async function main() {
     const other = await a.eval(`document.querySelector('[data-rig=inv-other]').textContent`);
     check('android: new-to-Nimiq-Pay steps and the any-wallet route', (await a.text()).includes('New to Nimiq Pay?') && other.includes(OWNER) && other.includes('KZ1|'));
     check('android: no horizontal scroll', await a.noHScroll());
+    await a.waitText('2 wallets chipped in', 6000);
+    const pub = await a.text();
+    check('public invite page: gift amounts only, no notes (a stranger can pay 1 NIM to publish one)', pub.includes('+5 NIM') && pub.includes('+3 NIM') && !pub.includes('evil') && !pub.includes('Happy birthday'));
+    await a.eval(`document.querySelector('[data-rig=inv-new]').nextElementSibling.scrollIntoView({ block: 'center' })`);
+    await a.shot(`${SHOTS}/v3-18c-invite-public-gifts.png`);
+    await a.eval('window.scrollTo(0, 0)');
     await a.shot(`${SHOTS}/v3-17-invite-android.png`);
     await a.eval(`document.querySelector('[data-rig=inv-new]').scrollIntoView()`);
     await a.shot(`${SHOTS}/v3-18-invite-android-steps.png`);

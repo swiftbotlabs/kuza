@@ -1,7 +1,7 @@
 // Kuza: savings goals on top of the user's own NIM stake.
 // Kuza holds nothing and sends nothing by itself. Money only moves through Nimiq Pay's own approval sheets.
 
-import { LUNA, toLuna, plainNim, fmtNim, fmtFiat, shortAddress, normalizeAddress, newId } from './nim.js';
+import { LUNA, toLuna, plainNim, fmtNim, fmtFiat, shortAddress, normalizeAddress, newId, sha256Hex } from './nim.js';
 import * as S from './staking.js';
 import * as G from './goals.js';
 import * as J from './jar.js';
@@ -127,7 +127,7 @@ function rateLine() {
 
 /**
  * Earned, only as the chain proves it: stake now minus every deposit into it plus every withdrawal, read from the
- * history of the wallet's own accounts (C.walletStakeHistory, RW.stakeFlows). R.proven.earned is null when that can't
+ * history of the wallet's own accounts (C.stakeLedger, RW.stakeFlows), within a read budget. R.proven.earned is null when that can't
  * be read completely; R.proven is undefined before the first read. earned() is for progress maths and counts only proof.
  */
 const earned = () => (Number.isSafeInteger(R.proven?.earned) ? R.proven.earned : 0);
@@ -245,7 +245,6 @@ async function sync() {
   }
 }
 
-const stakeCache = new Map(); // histories of old payment accounts, which never change again
 
 /**
  * Read the deposits and withdrawals behind the stake from the chain and work out Earned. The stake is read again after
@@ -255,18 +254,32 @@ const stakeCache = new Map(); // histories of old payment accounts, which never 
 async function proveEarned(force = false) {
   if (!st.address || R.staker === undefined || hasPending()) return;
   const total = R.staker?.total ?? 0;
-  // A proven answer for an unchanged stake stays good for a while; "not known yet" is retried at every sync.
-  if (!force && R.proven && R.proven.earned !== null && R.proven.total === total && R.proven.owner === st.address && Date.now() - R.proven.at < 10 * 60e3) return;
-  const keep = R.proven && R.proven.total === total && R.proven.owner === st.address && R.proven.earned !== null ? R.proven : null;
+  const same = R.proven && R.proven.total === total && R.proven.owner === st.address;
+  // A proven answer for an unchanged stake stays good for a while.
+  if (!force && same && R.proven.earned !== null && Date.now() - R.proven.at < 10 * 60e3) return;
+  // "Not known yet" is retried with a growing pause (30 s, 1, 2, 4 ... up to 10 min), never in a tight loop.
+  if (!force && R.proveRetryAt && Date.now() < R.proveRetryAt) return;
+  const keep = same && R.proven.earned !== null ? R.proven : null;
+  const owner = st.address;
   try {
-    const txs = await C.walletStakeHistory(st.address, st.accounts, stakeCache);
-    const again = await C.getStaker(st.address);
-    if ((again?.total ?? 0) !== total) return; // money moved while reading
-    const flows = RW.stakeFlows(txs, st.address, st.accounts);
-    const value = RW.provenEarned(total, flows);
-    R.proven = { earned: value, net: Math.max(0, flows.deposits - flows.withdrawals), total, owner: st.address, at: Date.now() };
+    const flowsOf = (txs, more) => RW.stakeFlows(txs, owner, [...st.accounts, ...more]);
+    const { flows, keep: sums } = await C.stakeLedger(owner, st.accounts, st.stakeCache, flowsOf, C.readBudget());
+    const again = await C.getStaker(owner);
+    if ((again?.total ?? 0) !== total || st.address !== owner) return; // money moved, or the wallet changed, while reading
+    if (Object.keys(sums).length) {
+      st.stakeCache = Object.fromEntries(Object.entries({ ...st.stakeCache, ...sums }).slice(-60));
+      saveState();
+    }
+    R.proven = { earned: RW.provenEarned(total, flows), net: Math.max(0, flows.deposits - flows.withdrawals), total, owner, at: Date.now() };
   } catch {
-    R.proven = keep || { earned: null, net: R.proven?.net ?? 0, total, owner: st.address, at: Date.now() };
+    R.proven = keep || { earned: null, net: R.proven?.net ?? 0, total, owner, at: Date.now() };
+  }
+  if (R.proven.earned === null) {
+    R.proveFails = (R.proveFails || 0) + 1;
+    R.proveRetryAt = Date.now() + Math.min(10 * 60e3, 30e3 * 2 ** (R.proveFails - 1));
+  } else {
+    R.proveFails = 0;
+    R.proveRetryAt = 0;
   }
 }
 
@@ -1049,9 +1062,10 @@ function sheetGoal(goal = null, presetName = '', { from = null } = {}) {
   move?.addEventListener('change', update);
   const picks = h('div', { class: 'icons' }, GOAL_ICONS.map((name2) => h('button', { type: 'button', class: `pick ${name2 === icn ? 'on' : ''}`, 'aria-label': name2, onclick: (e) => { icn = name2; picks.querySelectorAll('.pick').forEach((b) => b.classList.remove('on')); e.currentTarget.classList.add('on'); } }, icon(name2))));
   const submit = () => {
-    const cleanName = J.cleanText(name.value, 40);
+    const cleanName = J.cleanName(name.value);
     const luna = toLuna(target.value);
     const weeklyLuna = weekly.value.trim() ? toLuna(weekly.value) : 0;
+    if (J.URLISH.test(J.cleanText(name.value, 40))) { err.textContent = t('form.errNameLink'); return; }
     if (!cleanName) { err.textContent = t('form.errName'); return; }
     if (!luna || luna < LUNA) { err.textContent = t('form.errTarget'); return; }
     if (weeklyLuna === null) { err.textContent = t('form.errWeekly'); return; }
@@ -1276,6 +1290,12 @@ function sheetQR(link, title, body) {
 
 function sheetShare(goal) {
   const link = I.inviteLink(goal, st.address, R.network);
+  if (!J.decodeInvite(new URL(link).searchParams.get('j'))) {
+    openSheet(t('share.title'), h('div', { class: 'form' },
+      h('p', { class: 'small warn', 'data-rig': 'share-badname' }, t('share.badName')),
+      h('button', { class: 'btn primary wide', onclick: () => sheetGoal(goal) }, t('goal.edit'))));
+    return;
+  }
   const message = t('share.msg', { name: goal.name, link });
   const prog = goalProgress(goal);
   const shared = () => {
@@ -1402,6 +1422,16 @@ function sheetPayInvoice(goal) {
     if (typeof provider?.payLightningInvoice !== 'function') { toast(t('err.update'), 'bad', 6000); return; }
     sending = true;
     btn.disabled = true;
+    // Stored before the wallet is asked, so a closed sheet, a reload or a crash can't lead to a second payment.
+    const tried = await sha256Hex(checked.invoice);
+    if (st.lnTried.includes(tried)) {
+      toast(t('spend.duplicate'), 'bad', 7000);
+      btn.textContent = t('spend.payGo');
+      sending = false; // the button stays off until the text changes; the same invoice is refused again here
+      return;
+    }
+    st.lnTried = [...st.lnTried, tried].slice(-50);
+    saveState();
     btn.textContent = t('save.waiting');
     let keepOff = false;
     try {
@@ -1423,9 +1453,15 @@ function sheetPayInvoice(goal) {
       return;
     } catch (err) {
       const kind = W.classifyError(err);
+      // Only a cancel or a refusal before sending proves nothing went out; anything else may have been paid.
+      keepOff = !['cancel', 'invalid'].includes(kind);
+      if (!keepOff) {
+        st.lnTried = st.lnTried.filter((x) => x !== tried);
+        saveState();
+      }
       if (kind === 'cancel') toast(t('toast.cancel'));
-      else if (kind === 'duplicate') { toast(t('spend.duplicate'), 'bad', 7000); keepOff = true; }
-      else if (kind === 'unknown') { toast(t('spend.unknown'), 'bad', 8000); keepOff = true; }
+      else if (kind === 'duplicate') toast(t('spend.duplicate'), 'bad', 7000);
+      else if (kind === 'unknown' || kind === 'network') toast(t('spend.unknown'), 'bad', 8000);
       else if (kind === 'invalid' && /expired/i.test(err?.message || '')) toast(t('spend.expired'), 'bad', 6000);
       else if (kind === 'invalid') toast(t('spend.invalid'), 'bad', 6000);
       else walletFailure(err);
@@ -1569,14 +1605,15 @@ function jarHero(jar, size = 140) {
     jar.date ? h('div', { class: 'tiny mute' }, t('goal.by', { date: dateText(jar.date) })) : null);
 }
 
-function giftList() {
+/** Gifts so far. The public invite page shows amounts only: a note is text a stranger paid 1 NIM to publish. */
+function giftList(notes = true) {
   const gifts = R.gifts;
   return h('section', { class: 'card' }, h('h3', {}, t('jar.gifts')),
     gifts === null
       ? h('div', { class: 'skeleton w60' })
       : gifts.length
         ? gifts.slice(0, 8).map((g) => h('div', { class: 'entry' },
-          h('div', {}, h('div', { class: 'small' }, g.note || t('entry.gift')), h('div', { class: 'tiny mute' }, `${day(g.at)} · ${shortAddress(g.from)}`)),
+          h('div', {}, h('div', { class: 'small' }, (notes && g.note) || t('entry.gift')), h('div', { class: 'tiny mute' }, `${day(g.at)} · ${shortAddress(g.from)}`)),
           h('div', { class: 'entry-v' }, `+${nim(g.luna)}`)))
         : h('p', { class: 'small mute' }, t('jar.none')));
 }
@@ -1665,19 +1702,19 @@ function viewJar() {
       ? h('section', { class: 'card' }, h('p', { class: 'small' }, t('jar.mine')), h('a', { class: 'btn wide', href: `${location.pathname}${DEMO ? '?demo=1' : ''}#/goal/${jar.id}` }, t('jar.open')))
       : h('section', { class: 'card form', 'data-rig': 'j-form' },
         h('h3', {}, t('jar.addTitle')),
-        h('p', { class: 'small' }, t('jar.why', { name: jar.name })),
+        h('p', { class: 'small' }, t('jar.why')),
+        // Whoever made the link chose this address. A copied link can be edited, so the address is shown in full and
+        // the warning sits above the amount, not behind a tap.
+        h('p', { class: 'tiny mute', 'data-rig': 'j-trust' }, t('jar.trust')),
+        h('code', { class: 'mono', 'data-rig': 'j-owner' }, jar.owner),
         field(t('jar.amount'), amount),
         fiatLine,
         h('div', { class: 'quick' }, [100, 1000, 5000].map((n) => h('button', { type: 'button', class: 'chip-btn', onclick: () => { amount.value = String(n); label(); } }, fmtNim(n * LUNA, lang())))),
         field(t('jar.note'), note),
         h('p', { class: 'tiny mute' }, t('jar.public')),
         err, btn,
-        h('details', { class: 'trust' },
-          h('summary', { class: 'tiny' }, t('jar.whereTitle')),
-          h('p', { class: 'tiny mute' }, t('jar.trust')),
-          h('code', { class: 'mono', 'data-rig': 'j-owner' }, jar.owner),
-          h('p', { class: 'tiny mute' }, t('jar.direct')),
-          h('p', { class: 'tiny mute' }, t('jar.countNote'))));
+        h('p', { class: 'tiny mute center' }, t('jar.direct')),
+        h('p', { class: 'tiny mute center' }, t('jar.countNote')));
 
   return chrome(h('main', { 'data-rig': 'jar' },
     jarHero(jar),
@@ -1730,7 +1767,7 @@ function viewInvite(jar) {
         step(1, t('inv.s1'), t('inv.s1b'), h('div', { class: 'stores' }, stores.map(storeBtn))),
         step(2, t('inv.s2'), t('inv.s2b')),
         step(3, t('inv.s3'), t('inv.s3b', { name: jar.name })))),
-    giftList(),
+    giftList(false),
     h('details', { class: 'card trust', 'data-rig': 'inv-other' },
       h('summary', { class: 'small' }, t('inv.otherTitle')),
       h('p', { class: 'tiny mute' }, t('inv.otherBody')),

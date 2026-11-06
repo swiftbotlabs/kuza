@@ -42,12 +42,30 @@ export class Tab {
   constructor(ws) { this.ws = ws; this.waiting = new Map(); this.errors = []; this.csp = []; ws.onmessage = (e) => this.onMessage(JSON.parse(e.data)); }
   onMessage(m) {
     if (m.id && this.waiting.has(m.id)) { this.waiting.get(m.id)(m); this.waiting.delete(m.id); }
+    if (m.method === 'Fetch.requestPaused') { this.answerRpc(m.params); return; }
     if (m.method === 'Runtime.exceptionThrown') this.errors.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
     if (m.method === 'Log.entryAdded') {
       const text = `${m.params.entry.text} ${m.params.entry.url || ''}`;
       if (/Content Security Policy|Content-Security-Policy/i.test(text)) this.csp.push(text);
       else if (m.params.entry.level === 'error' && !/favicon|ERR_NAME|Failed to load|workers.dev|nimiqwatch|ERR_UNKNOWN_URL_SCHEME|ERR_ABORTED/.test(text)) this.errors.push(text);
     }
+  }
+  /** Answer the public Nimiq RPC from `handler(method, params)` for this tab only, CORS included. */
+  async fakeRpc(handler) {
+    this.rpcHandler = handler;
+    await this.call('Fetch.enable', { patterns: [{ urlPattern: 'https://rpc.nimiqwatch.com*' }] });
+  }
+  answerRpc({ requestId, request }) {
+    const cors = [{ name: 'access-control-allow-origin', value: '*' }, { name: 'access-control-allow-headers', value: 'content-type' }, { name: 'access-control-allow-methods', value: 'POST' }];
+    if (request.method === 'OPTIONS') { this.call('Fetch.fulfillRequest', { requestId, responseCode: 204, responseHeaders: cors }); return; }
+    let reply;
+    try {
+      const body = JSON.parse(request.postData || '{}');
+      reply = { jsonrpc: '2.0', id: body.id, result: { data: this.rpcHandler(body.method, body.params) } };
+    } catch (e) {
+      reply = { jsonrpc: '2.0', id: 1, error: { code: -1, message: String(e.message || e) } };
+    }
+    this.call('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [...cors, { name: 'content-type', value: 'application/json' }], body: Buffer.from(JSON.stringify(reply)).toString('base64') });
   }
   call(method, params = {}) {
     const i = ++id;
