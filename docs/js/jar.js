@@ -28,9 +28,24 @@ const LINKISH = /(:\/\/|www\.|[\p{L}\p{N}\p{Extended_Pictographic}_-]\.\p{L}{2,}
  */
 export function linkish(text) {
   if (typeof text !== 'string') return false;
-  const s = text.normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{M}]/gu, '').replace(DOTS, '.');
+  const s = text.normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{M}]/gu, '').replace(DOTS, '.')
+    .replace(SHORT, (all, pre, a, b) => (WEBBY.has(b) ? all : `${pre}${a} ${b}`))
+    .replace(AT_WORD, '$1at $2');
   return LINKISH.test(s);
 }
+
+// Initials and short titles written without a space are names, not addresses: B.Sc, M.Sc, B.Com, J.Smith, St.Mary,
+// Dr.Visit. Only this shape is let through: one capital letter (or St, Dr, Mr, Ms, Mt, Jr, Sr) standing alone before the
+// dot, one capitalised word after it, and nothing next that would make it an address (a path, another dot with more
+// after it, an @, a colon). Case matters, because addresses are written in lower case: "x.com", "t.me/..." and
+// "evil.com" stay refused, and so do endings that read as addresses even when capitalised (WEBBY). It runs on the
+// folded copy, so look-alike letters and dots can't use it either.
+const SHORT = /(^|[^\p{L}\p{N}_.@-])(\p{Lu}|St|Dr|Mr|Ms|Mt|Jr|Sr)\.(\p{Lu}\p{Ll}{1,15})(?![\p{L}\p{N}_/@:-]|\.[\p{L}\p{N}])/gu;
+const WEBBY = new Set(['Me', 'Io', 'Co', 'Ly', 'Gd', 'To', 'Gg', 'Cc', 'Tv', 'Ws', 'Ai', 'Xyz', 'App', 'Top', 'Link', 'Site', 'Shop', 'Store',
+  'Online', 'Gift', 'Click', 'Info', 'Biz', 'Net', 'Org', 'Ru', 'Su', 'Pw', 'Tk', 'Ml', 'Ga', 'Cf', 'Gq', 'Vip', 'Win', 'Bet', 'Money',
+  'Cash', 'Pay', 'Live', 'Fun', 'Icu', 'Xn']);
+// An @ before an everyday place is not a handle: "Fix roof @home", "Lunch @work". Other @words still are.
+const AT_WORD = /(^|[^\p{L}\p{N}_@])@(home|work|school|office|church|mosque|college|uni|campus|market|shop|farm|hospital|clinic)(?![\p{L}\p{N}_])/giu;
 
 /** A goal name as it may be shown: cleaned, with at least one letter or digit, and nothing that reads like a link. */
 export function cleanName(input) {
@@ -123,6 +138,15 @@ export function readInvite(params) {
 export function buildMemo(id, note) {
   const head = `${MEMO_PREFIX}|${id}|`;
   return head + cutBytes(cleanText(note, 60).replace(/\|/g, '/'), MEMO_MAX - utf8Bytes(head));
+}
+
+/**
+ * Would this gift note be hidden from the owner? parseMemo drops link-like notes, so the friend's form asks for an edit
+ * before anything goes on chain, rather than publishing a note nobody will see. Checks the note exactly as it is sent.
+ */
+export function noteRefused(note) {
+  const head = `${MEMO_PREFIX}|aaaaaa|`;
+  return linkish(cleanText(buildMemo('aaaaaa', note).slice(head.length), 60));
 }
 
 export function parseMemo(hex) {
