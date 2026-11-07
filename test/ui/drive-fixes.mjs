@@ -2,7 +2,8 @@
 // dots, amounts typed with separators, a plan's first saving, using the money of a goal that is all in the stake,
 // expired invoices, taking everything out (the goal keeps its NIM and rewards until they are spent), what a payment
 // books, demo links that stay in the demo, and a friend's note checked before it is sent.
-// Usage: node test/ui/drive-fixes.mjs <output dir>   (ports: KUZA_UI_PORT, KUZA_UI_CDP; another docs copy: KUZA_UI_ROOT)
+// Usage: node test/ui/drive-fixes.mjs <output dir>   (ports: KUZA_UI_PORT, KUZA_UI_CDP; another docs copy: KUZA_UI_ROOT;
+//        the deployed site instead of the local copy: KUZA_UI_BASE=https://kuza.swiftbotlab.workers.dev/)
 import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { serve, startChrome, newTab, sleep } from './harness.mjs';
@@ -34,7 +35,7 @@ async function main() {
   const chrome = await startChrome(CDP, `${OUT}/profile`);
   const tabs = [];
   try {
-    const base = `http://127.0.0.1:${PORT}/`;
+    const base = process.env.KUZA_UI_BASE || `http://127.0.0.1:${PORT}/`;
     const t = await newTab(CDP);
     tabs.push(t);
     await t.go(`${base}?demo=1&lang=en`);
