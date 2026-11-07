@@ -3,17 +3,43 @@
 export const LUNA = 100000; // 1 NIM = 100,000 Luna
 export const MAX_LUNA = 21e14; // total supply, 21 billion NIM
 
+/**
+ * Thousands separators that can only mean one thing become plain digits: "2,000.50" and "10.000,50" (both marks, the
+ * last one is the decimal) and "1,000,000" or "1.000.000" (the same mark twice). Anything else is left as typed.
+ */
+function ungroup(s) {
+  let m = /^([1-9]\d{0,2}(?:,\d{3})+)\.(\d+)$/.exec(s);
+  if (m) return `${m[1].replace(/,/g, '')}.${m[2]}`;
+  m = /^([1-9]\d{0,2}(?:\.\d{3})+),(\d+)$/.exec(s);
+  if (m) return `${m[1].replace(/\./g, '')}.${m[2]}`;
+  if (/^[1-9]\d{0,2}(,\d{3}){2,}$/.test(s)) return s.replace(/,/g, '');
+  if (/^[1-9]\d{0,2}(\.\d{3}){2,}$/.test(s)) return s.replace(/\./g, '');
+  return s;
+}
+
 /** Parse a user-typed NIM amount into integer Luna, or null if it isn't one. */
 export function toLuna(input) {
   if (typeof input === 'number') input = String(input);
   if (typeof input !== 'string') return null;
-  const s = input.trim().replace(/\s/g, '').replace(',', '.');
-  // "1,000" or "1.000" could mean a thousand or one: refuse rather than guess.
-  if (/^[1-9]\d{0,2}[.,]\d{3}$/.test(input.trim())) return null;
+  const raw = ungroup(input.trim().replace(/\s/g, ''));
+  // "1,000" or "1.000" alone could mean a thousand or one: refuse rather than guess (amountProblem says why).
+  if (/^[1-9]\d{0,2}[.,]\d{3}$/.test(raw)) return null;
+  const s = raw.replace(',', '.');
   if (!/^\d{1,14}(\.\d{0,5})?$/.test(s) && !/^\.\d{1,5}$/.test(s)) return null;
   const [whole = '0', frac = ''] = s.split('.');
   const luna = Number(whole || '0') * LUNA + Number((frac + '00000').slice(0, 5));
   return Number.isSafeInteger(luna) && luna <= MAX_LUNA ? luna : null;
+}
+
+/**
+ * Why toLuna refused what was typed: 'separators' when thousands separators leave it unclear ("1,000" could be a
+ * thousand or one), 'invalid' for anything else, null when it reads fine. The form then says the right thing.
+ */
+export function amountProblem(input) {
+  if (toLuna(input) !== null) return null;
+  const s = String(input ?? '').trim().replace(/\s/g, '');
+  if (/^\d{1,3}([.,]\d{3})+([.,]\d*)?$/.test(s) || (/^[\d.,]+$/.test(s) && /[.,].*[.,]/.test(s))) return 'separators';
+  return 'invalid';
 }
 
 /** Text for an amount field that toLuna reads back exactly. */

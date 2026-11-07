@@ -5,9 +5,11 @@
 //   gift      someone paid the owner with this goal's memo (on chain, lands in the wallet)
 //   stake     a confirmed staking transaction; fromWallet says how much came out of the wallet part
 //   assign    stake that already existed and now counts toward this goal, no transaction
-//   withdraw  a confirmed removal from stake back to the wallet
+//   withdraw  a confirmed removal from stake back to the wallet. Booked since 7 Nov 2026 with toWallet: the NIM stays
+//             with the goal, set aside in the wallet, until it is spent or the goal is marked done; `earned` is the
+//             goal's share of rewards that came out with it. Older entries (no toWallet) meant the NIM left the goal.
 //   move      stake handed on to another goal (that goal books it as assign), no transaction
-//   spend     a payment made from the wallet after the goal was taken out; shown in the history, counts toward nothing
+//   spend     a payment made from what the goal held in the wallet, never more than that (`paid` is the whole payment)
 // status is pending, ok or failed. Only ok counts.
 //
 // A goal can have a plan: `weekly` Luna every `every` ('week' or 'month'). The field keeps its old name so goals saved
@@ -59,6 +61,10 @@ export function suggestPlan(target, date, now, every = 'week', already = 0) {
 const counted = (goal) => goal.entries.filter((e) => e.status === 'ok');
 const monthly = (goal) => goal.every === 'month';
 
+/**
+ * What a goal holds: in the stake, set aside in the wallet, and how much of it friends gave. Each step is kept at 0 or
+ * more as it is applied, so an over-large payment or removal can never leave a debt that swallows a later gift.
+ */
 export function parts(goal) {
   let stake = 0;
   let wallet = 0;
@@ -67,15 +73,42 @@ export function parts(goal) {
     switch (e.kind) {
       case 'aside': wallet += e.luna; break;
       case 'gift': wallet += e.luna; gifts += e.luna; break;
-      case 'stake': stake += e.luna; wallet -= e.fromWallet || 0; break;
+      case 'stake': stake += e.luna; wallet = Math.max(0, wallet - (e.fromWallet || 0)); break;
       case 'assign': stake += e.luna; break;
-      case 'withdraw': stake -= e.luna; break;
-      case 'move': stake -= e.luna; break;
-      case 'spend': wallet -= e.luna; break; // paid out of what the goal held in the wallet
+      case 'withdraw': {
+        const out = Math.min(stake, e.luna);
+        stake -= out;
+        if (e.toWallet) wallet += out + (e.earned || 0); // back in the wallet, still this goal's
+        break;
+      }
+      case 'move': stake = Math.max(0, stake - e.luna); break;
+      case 'spend': wallet = Math.max(0, wallet - e.luna); break;
       default: break;
     }
   }
-  return { stake: Math.max(0, stake), wallet: Math.max(0, wallet), gifts };
+  return { stake, wallet, gifts };
+}
+
+/** Rewards that left the stake with this goal's NIM (booked on its withdrawals). They're the goal's for good. */
+export function rewardsTakenOut(goal) {
+  return counted(goal).reduce((n, e) => n + (e.kind === 'withdraw' && e.toWallet && e.earned > 0 ? e.earned : 0), 0);
+}
+
+/**
+ * The withdraw entry for NIM that has come out of the stake for this goal: at most what the goal had in the stake,
+ * plus the goal's share of the rewards (`share`, worked out before the stake left) up to what came out beyond that.
+ * Null when none of it was this goal's.
+ */
+export function withdrawEntry(goal, out, share, now) {
+  const inGoal = Math.min(parts(goal).stake, Math.max(0, out));
+  if (!(inGoal > 0)) return null;
+  const earned = Math.min(Math.max(0, share || 0), out - inGoal);
+  return { kind: 'withdraw', luna: inGoal, at: now, status: 'ok', toWallet: true, ...(earned > 0 ? { earned } : {}) };
+}
+
+/** How much of a payment of `value` Luna is booked against the goal: never more than it holds in the wallet. */
+export function spendPart(goal, value) {
+  return Math.min(parts(goal).wallet, Math.max(0, value || 0));
 }
 
 /** Sum of what goals hold in stake, across all goals, closed or not. */
@@ -104,14 +137,20 @@ export function earnedShare(goal, goals, earned, principal = 0) {
   const open = goals.filter((g) => !g.closedAt);
   const inGoals = open.reduce((sum, g) => sum + parts(g).stake, 0);
   const all = Math.max(inGoals, Number.isSafeInteger(principal) ? principal : 0);
-  if (!all || goal.closedAt || !(earned > 0)) return 0;
-  return Math.floor(earned * (parts(goal).stake / all));
+  // Rewards already taken out with some goal's NIM belong to that goal; only what is still in the stake is shared.
+  const inStake = (earned || 0) - goals.reduce((n, g) => n + rewardsTakenOut(g), 0);
+  if (!all || goal.closedAt || !(inStake > 0)) return 0;
+  return Math.floor(inStake * (parts(goal).stake / all));
 }
 
+/**
+ * Where a goal stands. `earned` is its share of the rewards still in the stake (part of `saved`); `earnedAll` adds the
+ * rewards that came out with its NIM (already inside `wallet`), which is what the goal's Earned tile shows.
+ */
 export function progress(goal, earnedPart = 0) {
   const p = parts(goal);
   const saved = p.stake + p.wallet + earnedPart;
-  return { ...p, earned: earnedPart, saved, ratio: goal.target ? Math.min(1, saved / goal.target) : 0, left: Math.max(0, goal.target - saved) };
+  return { ...p, earned: earnedPart, earnedAll: earnedPart + rewardsTakenOut(goal), saved, ratio: goal.target ? Math.min(1, saved / goal.target) : 0, left: Math.max(0, goal.target - saved) };
 }
 
 /** When plan period i starts. Weeks run from the goal's creation; months keep its day of the month (31 -> 30, 28...). */
@@ -138,14 +177,25 @@ export function planPeriod(goal, t) {
 /** Kept for older callers: the plan period of a weekly goal. */
 export const planWeek = planPeriod;
 
+/**
+ * What each plan period added to the goal, net: new money in (set aside, gifts, new stake, stake moved in from another
+ * goal) less what left it (spent, moved on, or taken out before 7 Nov 2026, when a withdrawal still left the goal).
+ * Moving the goal's own NIM between wallet and stake adds nothing. A period never reads below 0.
+ */
 function savedByWeek(goal) {
-  const by = new Map();
+  const net = new Map();
+  const add = (e, n) => { const w = planPeriod(goal, e.at); net.set(w, (net.get(w) || 0) + n); };
   for (const e of counted(goal)) {
-    if (!['aside', 'stake', 'gift'].includes(e.kind)) continue;
-    if (e.kind === 'stake' && e.fromWallet >= e.luna) continue; // moved, not new money
-    const w = planPeriod(goal, e.at);
-    by.set(w, (by.get(w) || 0) + e.luna - (e.fromWallet || 0));
+    switch (e.kind) {
+      case 'aside': case 'gift': case 'assign': add(e, e.luna); break;
+      case 'stake': add(e, e.luna - Math.min(e.luna, e.fromWallet || 0)); break;
+      case 'spend': case 'move': add(e, -e.luna); break;
+      case 'withdraw': if (!e.toWallet) add(e, -e.luna); break;
+      default: break;
+    }
   }
+  const by = new Map();
+  for (const [w, n] of net) by.set(w, Math.max(0, n));
   return by;
 }
 
@@ -263,6 +313,9 @@ function cleanEntry(e) {
   const out = { kind: e.kind, luna: e.luna, at: Math.abs(e.at) <= 8.64e15 ? e.at : 0, status: STATUSES.has(e.status) ? e.status : 'failed' };
   if (typeof e.hash === 'string' && /^[0-9a-fA-F]{64}$/.test(e.hash)) out.hash = e.hash;
   if (Number.isSafeInteger(e.fromWallet) && e.fromWallet >= 0) out.fromWallet = e.fromWallet;
+  if (e.toWallet === true) out.toWallet = true;
+  if (Number.isSafeInteger(e.earned) && e.earned > 0) out.earned = e.earned;
+  if (Number.isSafeInteger(e.paid) && e.paid > 0) out.paid = e.paid;
   if (Number.isSafeInteger(e.block)) out.block = e.block;
   if (typeof e.from === 'string') out.from = e.from.slice(0, 64);
   if (typeof e.note === 'string') out.note = e.note.slice(0, 60);

@@ -14,9 +14,13 @@ export const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.nimiq
 export const APPSTORE_URL = 'https://apps.apple.com/app/nimiq-pay/id6471844738';
 export const NIMIQ_PAY_URL = 'https://nimpay.app/';
 
-/** The invite link for a goal: always the public address, never wherever this copy happens to run. */
-export function inviteLink(goal, owner, net) {
-  return `${APP_URL}?j=${encodeInvite({ id: goal.id, name: goal.name, target: goal.target, date: goal.date, owner, net })}`;
+/**
+ * The invite link for a goal: always the public address, never wherever this copy happens to run. A goal made in the
+ * browser demo keeps ?demo=1, so its link opens the demo again (pretend wallet, pretend chain) and never sends the
+ * pretend address to the real network.
+ */
+export function inviteLink(goal, owner, net, demo = false) {
+  return `${APP_URL}?${demo ? 'demo=1&' : ''}j=${encodeInvite({ id: goal.id, name: goal.name, target: goal.target, date: goal.date, owner, net })}`;
 }
 
 /** 'android', 'ios' or null (a computer, or anything else). */

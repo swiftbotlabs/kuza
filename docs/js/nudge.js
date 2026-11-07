@@ -35,11 +35,14 @@ export function walletNudge({ spendable, noted = 0, staker, pending = false }) {
 
 /**
  * What to fill in for a saving while nothing is staked yet: what the wallet can spare, up to what the goal still
- * needs. 0 means no suggestion: balance unknown, too little, a stake already there, or the goal is full.
+ * needs and, when the goal has a plan, up to the plan's next saving (`planned`): someone who just chose 250 a week
+ * said they can put in 250, not the whole target. 0 means no suggestion: balance unknown, too little, a stake already
+ * there, or the goal is full.
  */
-export function firstSuggestion({ spendable, noted = 0, staker, left }) {
+export function firstSuggestion({ spendable, noted = 0, staker, left, planned = 0 }) {
   if (staker === undefined || (staker && staker.total > 0)) return 0;
   if (!(Number.isSafeInteger(left) && left > 0)) return 0;
   const free = spare(spendable, noted);
-  return free ? Math.min(free, left) : 0;
+  if (!free) return 0;
+  return Number.isSafeInteger(planned) && planned > 0 ? Math.min(free, left, planned) : Math.min(free, left);
 }
