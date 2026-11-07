@@ -397,6 +397,7 @@ export function sanitizeState(raw) {
     out.unstake = { goal: typeof raw.unstake.goal === 'string' ? raw.unstake.goal : null, amount: raw.unstake.amount, at: Number(raw.unstake.at) || 0 };
     if (Number.isSafeInteger(raw.unstake.removing)) out.unstake.removing = raw.unstake.removing;
     if (Number.isSafeInteger(raw.unstake.takeOut) && raw.unstake.takeOut > 0) out.unstake.takeOut = raw.unstake.takeOut;
+    if (Number.isSafeInteger(raw.unstake.walletOut) && raw.unstake.walletOut > 0) out.unstake.walletOut = raw.unstake.walletOut;
   }
   out.noCount = raw.noCount === true;
   // Lightning invoices already handed to the wallet (SHA-256 only), so the same one is never paid twice from Kuza.

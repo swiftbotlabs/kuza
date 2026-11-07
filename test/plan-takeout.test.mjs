@@ -141,10 +141,12 @@ test('T4: staked NIM taken out comes off the goal only once it is back in the wa
 });
 
 test('T5: stored state keeps take-outs and a take-out in progress, and nothing else', () => {
-  const raw = { v: 1, goals: [{ id: 'kkkkkk', name: 'K', target: 1000 * NIM, entries: [ok('out', 5 * NIM, START)] }], unstake: { goal: 'kkkkkk', amount: 160 * NIM, at: START, takeOut: 160 * NIM } };
+  const raw = { v: 1, goals: [{ id: 'kkkkkk', name: 'K', target: 1000 * NIM, entries: [ok('out', 5 * NIM, START)] }], unstake: { goal: 'kkkkkk', amount: 160 * NIM, at: START, takeOut: 160 * NIM, walletOut: 40 * NIM } };
   const s = G.sanitizeState(raw);
   assert.equal(s.goals[0].entries[0].kind, 'out');
   assert.equal(s.unstake.takeOut, 160 * NIM);
+  assert.equal(s.unstake.walletOut, 40 * NIM); // the wallet part of a staked take-out is booked only when it lands
+  assert.equal(G.sanitizeState({ ...raw, unstake: { ...raw.unstake, walletOut: 1.5 } }).unstake.walletOut, undefined);
   assert.equal(G.sanitizeState({ ...raw, unstake: { ...raw.unstake, takeOut: -1 } }).unstake.takeOut, undefined);
   assert.equal(G.sanitizeState({ ...raw, unstake: { ...raw.unstake, takeOut: '9' } }).unstake.takeOut, undefined);
 });

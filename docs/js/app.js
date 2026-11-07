@@ -521,7 +521,8 @@ async function sameAccount() {
 
 /**
  * Start the cooling-off. With `takeOut` (from "Take some out"), the NIM is taken off the goal when it lands in the wallet,
- * and `walletOut`, the part the goal already held in the wallet, comes off as soon as the transaction is approved.
+ * together with `walletOut`, the part the goal already held in the wallet. Nothing comes off before that, so a
+ * transaction that fails or a cooling-off that is called off leaves the goal as it was.
  */
 async function startCooling(goal, amount, { takeOut = false, walletOut = 0 } = {}) {
   const provider = W.getProvider();
@@ -533,10 +534,8 @@ async function startCooling(goal, amount, { takeOut = false, walletOut = 0 } = {
     const rest = staker.active + staker.inactive - amount;
     const newActive = rest < S.MIN_STAKE ? 0 : rest;
     const hash = await provider.sendSetActiveStakeTransaction({ newActiveBalance: newActive });
-    st.unstake = { goal: goal?.id || null, amount, at: Date.now(), ...(takeOut && goal ? { takeOut: amount } : {}) };
+    st.unstake = { goal: goal?.id || null, amount, at: Date.now(), ...(takeOut && goal ? { takeOut: amount, ...(walletOut > 0 ? { walletOut } : {}) } : {}) };
     st.op = { kind: 'cool', hash, at: Date.now() };
-    const now = takeOut && goal && walletOut > 0 ? G.takeOutEntry(goal, walletOut, Date.now()) : null;
-    if (now) goal.entries.push(now);
     saveState();
     closeSheet(true);
     render();
@@ -646,10 +645,13 @@ function finishWithdrawIfDone() {
     if (entry) {
       goal.entries.push(entry);
       rest -= entry.luna;
-      // Taken out on purpose ("Take some out"): it's the owner's again, off the goal, as soon as it is in the wallet.
-      const off = u.takeOut > 0 ? G.takeOutEntry(goal, Math.min(u.takeOut, entry.luna + (entry.earned || 0)), Date.now()) : null;
-      if (off) goal.entries.push(off);
     }
+    // Taken out on purpose ("Take some out"): what landed and the part that was already in the wallet are the owner's
+    // again, off the goal, now that the withdrawal has gone through.
+    const landed = entry ? entry.luna + (entry.earned || 0) : 0;
+    const want = (u.takeOut > 0 ? Math.min(u.takeOut, landed) : 0) + (u.walletOut > 0 ? u.walletOut : 0);
+    const off = want > 0 ? G.takeOutEntry(goal, want, Date.now()) : null;
+    if (off) goal.entries.push(off);
   }
   // Anything beyond the goal's own deposits came from rewards first, then from stake older than Kuza.
   const before = G.earnedTotal((R.staker?.total ?? 0) + rest, st.baseline ?? 0, st.goals);

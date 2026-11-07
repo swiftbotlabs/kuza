@@ -163,6 +163,29 @@ async function main() {
     const staked = goal.entries.filter((e) => e.kind === 'stake' && e.status === 'ok').reduce((n, e) => n + e.luna, 0);
     const wpart = (await tile(t, 'Set aside'));
     console.log('after staking: stake entries', staked / NIM, 'set aside tile', wpart);
+    const outs = () => goal.entries.filter((e) => e.kind === 'out').map((e) => e.luna / NIM);
+    // Called off: start a take-out of 200, then "Keep earning instead". The goal must be exactly as it was.
+    await t.click('[data-rig=take-out]');
+    await t.waitFor('[data-rig=takeout-sheet]');
+    await t.fill('[data-rig=to-amount]', '200');
+    await t.click('[data-rig=to-go]');
+    await t.waitFor('[data-rig=wd-takeout]');
+    await t.click('[data-rig=w-submit]');
+    await yes(t);
+    await sleep(500);
+    if ((await t.text()).includes('Pretend wallet')) await t.click('[data-rig=demo-yes]');
+    await t.waitText('Cooling-off', 6000);
+    await sleep(1200);
+    await t.click('[data-rig=cool-card]');
+    await t.waitFor('[data-rig=wd-resume]');
+    await t.click('[data-rig=wd-resume]');
+    await yes(t);
+    await sleep(2500);
+    await poke(t, 1500);
+    let s = await state(t);
+    goal = s.goals.find((g) => g.name === 'School fees');
+    check('take-out called off during the cooling-off: nothing was taken off the goal (still 40 set aside, 300 staked)', JSON.stringify(outs()) === '[20]' && !s.unstake
+      && (await tile(t, 'Set aside')).includes('40 NIM') && (await tile(t, 'In your stake')).includes('300 NIM'));
     await t.click('[data-rig=take-out]');
     await t.waitFor('[data-rig=takeout-sheet]');
     const ready = num(await text(t, '[data-rig=to-ready]'));
@@ -183,10 +206,9 @@ async function main() {
     if ((await t.text()).includes('Pretend wallet')) await t.click('[data-rig=demo-yes]');
     await t.waitText('Cooling-off', 6000);
     await sleep(1200);
-    let s = await state(t);
+    s = await state(t);
     goal = s.goals.find((g) => g.name === 'School fees');
-    const outs = () => goal.entries.filter((e) => e.kind === 'out').map((e) => e.luna / NIM);
-    check(`cooling-off started: the wallet part (${ready}) came off at once, the staked ${fromStake} not yet`, JSON.stringify(outs()) === JSON.stringify([20, Number(ready.replace(/,/g, ''))]) && s.unstake && s.unstake.takeOut === fromStake * NIM);
+    check(`cooling-off started: nothing taken off the goal yet; the wallet part (${ready}) and the staked ${fromStake} wait for the landing`, JSON.stringify(outs()) === '[20]' && s.unstake && s.unstake.takeOut === fromStake * NIM && s.unstake.walletOut === Number(ready.replace(/,/g, '')) * NIM);
     check('cooling-off: the goal still counts the staked NIM (never pretends it is out already)', (await tile(t, 'In your stake')).includes('300 NIM'));
     await t.eval('window.__kuzaDemo.skipCooling()');
     await poke(t, 300);
@@ -202,7 +224,7 @@ async function main() {
     s = await state(t);
     goal = s.goals.find((g) => g.name === 'School fees');
     const w = goal.entries.find((e) => e.kind === 'withdraw');
-    check(`landed: withdraw ${fromStake} booked, then taken off the goal; the goal keeps ${300 - fromStake} staked, 0 set aside`, w && w.luna === fromStake * NIM && JSON.stringify(outs()) === JSON.stringify([20, Number(ready.replace(/,/g, '')), fromStake]) && !s.unstake
+    check(`landed: withdraw ${fromStake} booked, then taken off the goal; the goal keeps ${300 - fromStake} staked, 0 set aside`, w && w.luna === fromStake * NIM && JSON.stringify(outs()) === JSON.stringify([20, 200]) && !s.unstake
       && (await tile(t, 'In your stake')).includes(`${300 - fromStake} NIM`) && (await tile(t, 'Set aside')).includes(' 0 NIM'));
     check('the goal is still open (not deleted, not broken)', !goal.closedAt && (await t.has('[data-rig=save]')));
     check('below 25% again: the "quarter of the way" moment is no longer shown', (await text(t, '.goal-hero')).includes('14%') && !(await t.has('[data-rig=mark-banner]')));
