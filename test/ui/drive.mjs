@@ -167,9 +167,9 @@ async function main() {
     await t.fill('[data-rig=f-weekly]', '50');
     await t.click('[data-rig=f-submit]');
     await t.waitText('Make your first saving');
-    // Nothing staked yet: the amount is filled in from the wallet, capped by the goal (5,000 of 25,000 NIM).
-    check('first saving: suggestion filled in, capped by the goal', (await t.eval(`document.querySelector('[data-rig=s-amount]').value`)) === '5000');
-    check('first saving: says it is a suggestion', await t.eval(`(() => { const n = document.querySelector('[data-rig=s-suggested]'); return !!n && !n.hidden && n.innerText.includes('Suggested from the 25,000 NIM'); })()`));
+    // Nothing staked yet and a plan of 50 a week: the plan's 50 is filled in, not the whole 5,000 target (outside tester, 7 Nov).
+    check('first saving: the plan amount is filled in, not the whole target', (await t.eval(`document.querySelector('[data-rig=s-amount]').value`)) === '50');
+    check('first saving: says it is the plan\'s saving for this week', await t.eval(`(() => { const n = document.querySelector('[data-rig=s-suggested]'); return !!n && !n.hidden && n.innerText.includes("This week's saving in your plan"); })()`));
     await t.shot(`${OUT}/03b-first-suggested.png`);
 
     // Under the minimum: stays in the wallet.
@@ -283,7 +283,8 @@ async function main() {
     await t.waitText('Your invite link');
     await t.shot(`${OUT}/07-share.png`);
     const link = await t.eval(`document.querySelector('[data-rig=share-link]').value`);
-    check('share: short link on the public URL', link.startsWith('https://kuza.swiftbotlab.workers.dev/?j=m') && link.length <= 150);
+    // Made in the demo, so the link opens the demo again and never asks the real network about the pretend address.
+    check('share: short link on the public URL, kept in the demo', link.startsWith('https://kuza.swiftbotlab.workers.dev/?demo=1&j=m') && link.length <= 157);
     await t.click('[data-rig=sheet-close]');
 
     // Break the goal: dust rule first.

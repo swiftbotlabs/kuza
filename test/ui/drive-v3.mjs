@@ -6,7 +6,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { serve, startChrome, newTab, sleep } from './harness.mjs';
-import { ln } from '../fixtures/lightning.mjs';
+import { ln, SPEC_TS, SPEC_COFFEE, damaged } from '../fixtures/lightning.mjs';
 
 const OUT = resolve(process.argv[2] || 'tmp-ui-v3');
 const SHOTS = `${OUT}/shots`;
@@ -159,7 +159,9 @@ async function main() {
     await sleep(300);
     const copied = await t.eval('window.__copied');
     const link = await t.eval(`document.querySelector('[data-rig=share-link]').value`);
-    check('share: one tap copies message and short link', copied && copied.includes('Laptop') && copied.includes(link) && link.includes('?j=m') && link.length <= 140);
+    // The same goal's invite outside the demo (what a real phone browser page links to): no demo=1.
+    const pubLink = link.replace('?demo=1&', '?');
+    check('share: one tap copies message and short link (kept in the demo)', copied && copied.includes('Laptop') && copied.includes(link) && link.includes('?demo=1&j=m') && link.length <= 147);
     await t.shot(`${SHOTS}/v3-05-share.png`);
     await t.click('[data-rig=share-qr]');
     await t.waitFor('[data-rig=qr] svg');
@@ -188,8 +190,22 @@ async function main() {
     await t.waitFor('[data-rig=use-sheet]');
     check('use it: three honest steps', (await t.text()).includes('Stop earning') && (await t.text()).includes('Kuza never holds your NIM'));
     await t.shot(`${SHOTS}/v3-08-use.png`);
+    // Everything is still in the stake: no payment is offered yet, it would come from other money (outside tester, 7 Nov).
+    check('use it: a goal that is all in the stake offers no payment yet, and says when it will', !(await t.has('[data-rig=use-pay]')) && (await t.has('[data-rig=use-pay-later]')));
+    await t.click('[data-rig=sheet-close]');
+    await sleep(250);
+    // A friend's gift lands in the wallet for this goal: now there is something to pay with.
+    const laptopId = await t.eval(`location.hash.split('/').pop()`);
+    await t.eval(`window.__kuzaDemo.gift(1000000000, 'KZ1|${laptopId}|For the laptop')`);
+    await t.eval('location.reload()');
+    await sleep(1500);
+    await still(t);
+    await t.waitText('For the laptop', 10000);
+    await t.click('[data-rig=r-use]');
+    await t.waitFor('[data-rig=use-sheet]');
     await t.click('[data-rig=use-pay]');
     await t.waitFor('[data-rig=ln-sheet]');
+    check('pay sheet: says how much this goal holds in the wallet', (await t.eval(`document.querySelector('[data-rig=ln-holds]')?.textContent || ''`)).includes('This goal has 10,000 NIM in your wallet'));
     const lnMsg = () => t.eval(`document.querySelector('[data-rig=ln-msg]').textContent`);
     const lnOff = () => t.eval(`document.querySelector('[data-rig=ln-pay]').disabled`);
     await t.fill('[data-rig=ln-input]', 'hello');
@@ -198,9 +214,15 @@ async function main() {
     check('invoice: test network refused on mainnet', (await lnMsg()).includes('different network') && (await lnOff()));
     await t.fill('[data-rig=ln-input]', ln('lnbc'));
     check('invoice: no amount refused', (await lnMsg()).includes('no amount') && (await lnOff()));
-    await t.fill('[data-rig=ln-input]', ln('lnbc5u').slice(0, -2) + 'qq');
+    await t.fill('[data-rig=ln-input]', damaged(ln('lnbc5u'), 2));
     check('invoice: a damaged copy (checksum) is caught in Kuza, before the wallet', (await lnMsg()).includes('looks damaged') && (await lnOff()));
-    await t.fill('[data-rig=ln-input]', `lightning:${ln('lnbc2500u').toUpperCase()}`);
+    await t.fill('[data-rig=ln-input]', SPEC_COFFEE);
+    check('invoice: the BOLT11 spec example from 2017 is refused as expired', (await lnMsg()).includes('has expired') && (await lnOff()));
+    await t.fill('[data-rig=ln-input]', ln('lnbc5u', '', { ts: Math.floor(Date.now() / 1000) - 700, expiry: 600 }));
+    check('invoice: one past its own x expiry is refused', (await lnMsg()).includes('has expired') && (await lnOff()));
+    void SPEC_TS;
+    const A = ln('lnbc2500u'); // made once: an invoice carries the second it was made, so a second ln() call is a new one
+    await t.fill('[data-rig=ln-input]', `lightning:${A.toUpperCase()}`);
     check('invoice: valid one accepted with its amount', (await lnMsg()).includes('250,000 sats') && !(await lnOff()));
     await t.shot(`${SHOTS}/v3-09-lightning.png`);
     await t.click('[data-rig=ln-pay]');
@@ -221,7 +243,7 @@ async function main() {
       const asked = (await t.text()).includes('Pay with Bitcoin Lightning');
       return asked;
     };
-    const askedAgain = await payAgain(ln('lnbc2500u').toUpperCase());
+    const askedAgain = await payAgain(A.toUpperCase());
     await t.shot(`${SHOTS}/v3-09b-invoice-refused.png`);
     check('invoice: reopened sheet, same invoice -> refused, the wallet is not asked again', !askedAgain && (await t.text()).includes("Don't pay it again") && (await t.eval('window.__kuzaDemo.chain.pays')) === 1);
     await t.click('[data-rig=sheet-close]');
@@ -230,7 +252,7 @@ async function main() {
     await sleep(1500);
     await still(t);
     await t.waitFor('[data-rig=r-use]', 8000);
-    check('invoice: after a reload it is still refused', !(await payAgain(ln('lnbc2500u'))) && (await t.eval('window.__kuzaDemo.chain.pays || 0')) === 0);
+    check('invoice: after a reload it is still refused', !(await payAgain(A)) && (await t.eval('window.__kuzaDemo.chain.pays || 0')) === 0);
     await t.click('[data-rig=sheet-close]');
     await sleep(250);
     // Cancelled in the wallet: nothing went out, so the same invoice may be tried again.
@@ -331,7 +353,7 @@ async function main() {
     await t.click('[data-rig=thanks-pass]');
     await sleep(250);
     const passed = await t.eval('window.__copied');
-    check('thank-you: pass it on copies a message with the same goal', passed && passed.includes('chipped in') && passed.includes(`?j=${v}`));
+    check('thank-you: pass it on copies a message with the same goal', passed && passed.includes('chipped in') && passed.includes(link));
     await t.eval(`document.querySelector('[data-rig=thanks-own] .ideas a').click()`);
     await sleep(1200);
     await t.waitFor('[data-rig=f-name]', 6000);
@@ -355,7 +377,7 @@ async function main() {
     const href = await a.eval(`document.querySelector('[data-rig=open-pay]').getAttribute('href')`);
     const inner = decodeURIComponent(href.slice('intent://miniapp?url='.length, href.indexOf('#')));
     check('android: no landing, the invite page shows', await a.eval(`!document.getElementById('landing') && document.documentElement.classList.contains('app')`));
-    check('android: button = Nimiq Pay intent with Play Store fallback, opening this goal', href.startsWith('intent://miniapp?url=') && href.includes(';package=com.nimiq.pay;') && href.includes('S.browser_fallback_url=https%3A%2F%2Fplay.google.com') && inner === link);
+    check('android: button = Nimiq Pay intent with Play Store fallback, opening this goal', href.startsWith('intent://miniapp?url=') && href.includes(';package=com.nimiq.pay;') && href.includes('S.browser_fallback_url=https%3A%2F%2Fplay.google.com') && inner === pubLink);
     check('android: Play Store link, no App Store', (await a.has('[data-rig=store-android]')) && !(await a.has('[data-rig=store-ios]')));
     const other = await a.eval(`document.querySelector('[data-rig=inv-other]').textContent`);
     check('android: new-to-Nimiq-Pay steps and the any-wallet route', (await a.text()).includes('New to Nimiq Pay?') && other.includes(OWNER) && other.includes('KZ1|'));
@@ -379,7 +401,7 @@ async function main() {
     await i.go(`${base}?j=${v}`, 1500);
     await i.waitFor('[data-rig=invite]');
     const ihref = await i.eval(`document.querySelector('[data-rig=open-pay]').getAttribute('href')`);
-    check('iphone: button = nimiqpay:// link to this goal, App Store offered', ihref === `nimiqpay://miniapp?url=${encodeURIComponent(link)}` && (await i.has('[data-rig=store-ios]')) && !(await i.has('[data-rig=store-android]')));
+    check('iphone: button = nimiqpay:// link to this goal, App Store offered', ihref === `nimiqpay://miniapp?url=${encodeURIComponent(pubLink)}` && (await i.has('[data-rig=store-ios]')) && !(await i.has('[data-rig=store-android]')));
     await i.eval(`document.querySelector('[data-rig=open-pay]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))`);
     await sleep(3200);
     check('iphone: nothing opened -> the get-the-app help shows', await i.eval(`!document.querySelector('[data-rig=inv-noapp]').hidden`));
@@ -393,7 +415,7 @@ async function main() {
     await d.waitFor('[data-rig=qr] svg');
     await sleep(300);
     await d.shotOf('[data-rig=qr] svg', `${OUT}/qr-desktop.png`);
-    check('computer: the button shows a QR of this goal (zbarimg)', decodeQR(`${OUT}/qr-desktop.png`) === link);
+    check('computer: the button shows a QR of this goal (zbarimg)', decodeQR(`${OUT}/qr-desktop.png`) === pubLink);
     await d.shot(`${SHOTS}/v3-20-invite-desktop-qr.png`);
 
     // ---------- G. Longest languages at small widths ----------

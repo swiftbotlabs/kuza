@@ -1,7 +1,7 @@
 // Kuza: savings goals on top of the user's own NIM stake.
 // Kuza holds nothing and sends nothing by itself. Money only moves through Nimiq Pay's own approval sheets.
 
-import { LUNA, toLuna, plainNim, fmtNim, fmtFiat, shortAddress, normalizeAddress, newId, sha256Hex } from './nim.js';
+import { LUNA, toLuna, amountProblem, plainNim, fmtNim, fmtFiat, shortAddress, normalizeAddress, newId, sha256Hex } from './nim.js';
 import * as S from './staking.js';
 import * as G from './goals.js';
 import * as J from './jar.js';
@@ -67,6 +67,12 @@ function adoptAddress(address) {
 /* ---------- small formatters ---------- */
 
 const nim = (luna, dec) => `${fmtNim(luna, lang(), dec)} NIM`;
+/** The right message for an amount that wasn't read: "without separators" for 1,000, else the form's own message. */
+const amountError = (text, otherwise) => (amountProblem(text) === 'separators' ? t('form.errSeparators') : otherwise);
+/** "View on chain" for a real transaction; in the demo the hash is made up, so it says so instead of linking out. */
+const proof = (hash, rig) => (DEMO
+  ? h('span', { class: 'tiny mute', 'data-rig': rig || 'proof-demo' }, t('entry.proofDemo'))
+  : h('a', { class: 'tiny', href: C.explorerTx(hash), target: '_blank', rel: 'noopener noreferrer', ...(rig ? { 'data-rig': rig } : {}) }, t('entry.proof')));
 const fiatCode = () => R.fiat || 'USD';
 
 function fiat(luna) {
@@ -625,9 +631,12 @@ function finishWithdrawIfDone() {
   const out = u.removing;
   let rest = out;
   if (goal) {
-    const inGoal = Math.min(G.parts(goal).stake, out);
-    if (inGoal > 0) goal.entries.push({ kind: 'withdraw', luna: inGoal, at: Date.now(), status: 'ok' });
-    rest -= inGoal;
+    // The goal's NIM stays with it, set aside in the wallet, with its share of the rewards that came out too.
+    const entry = G.withdrawEntry(goal, out, goalProgress(goal).earned, Date.now());
+    if (entry) {
+      goal.entries.push(entry);
+      rest -= entry.luna;
+    }
   }
   // Anything beyond the goal's own deposits came from rewards first, then from stake older than Kuza.
   const before = G.earnedTotal((R.staker?.total ?? 0) + rest, st.baseline ?? 0, st.goals);
@@ -703,7 +712,7 @@ function summaryCard() {
     h('div', { class: 'hero-label' }, t('home.staked')),
     R.staker === undefined ? h('div', { class: 'skeleton w60' }) : amountBlock(staked, { big: true }),
     h('div', { class: 'hero-row' },
-      h('button', { class: 'hero-btn', 'data-rig': 'earned', 'aria-label': t('rw.title'), onclick: sheetRewards },
+      h('button', { class: 'hero-btn', 'data-rig': 'earned', 'aria-label': t('rw.title'), onclick: () => sheetRewards() },
         h('div', { class: 'hero-k' }, t('home.earned'), ' ', icon('info', 12)), h('div', { class: 'hero-v', 'data-rig': 'earned-v' }, earnedLabel())),
       h('div', {}, h('div', { class: 'hero-k' }, t('home.inWallet')), h('div', { class: 'hero-v' }, nim(inWallet))),
       rate ? h('div', {}, h('div', { class: 'hero-k' }, t('home.rate')), h('div', { class: 'hero-v' }, `~${rate}`)) : null),
@@ -839,7 +848,8 @@ function viewGoal(goal) {
   const reached = prog.ratio >= 1;
   const done = Boolean(goal.closedAt);
   const entries = [...goal.entries].sort((a, b) => b.at - a.at);
-  const stakeable = !done && prog.wallet > 0 && S.saveRoute(prog.wallet, R.staker).route !== 'aside';
+  const spending = spentCard(goal, prog);
+  const stakeable = !done && !spending && prog.wallet > 0 && S.saveRoute(prog.wallet, R.staker).route !== 'aside';
   const body = h('main', {},
     h('section', { class: 'goal-hero' },
       hexRing(prog.ratio, 164, h('div', {}, goalIcon(goal), h('div', { class: 'pct big' }, `${Math.floor(prog.ratio * 100)}%`)), { width: 6 }),
@@ -852,10 +862,10 @@ function viewGoal(goal) {
       h('div', { class: 'grow' }, h('b', {}, t('done.cardTitle')), h('div', { class: 'small mute' }, t('done.cardBody', { date: day(goal.closedAt) })))) : null,
     !done && reached ? reachedCard(goal) : null,
     coolingCard(),
-    spentCard(goal, prog),
+    spending,
     h('div', { class: 'split' },
       h('div', { class: 'tile' }, h('div', { class: 'tile-k' }, t('goal.inStake')), h('div', { class: 'tile-v' }, nim(prog.stake))),
-      h('button', { class: 'tile tile-btn', 'data-rig': 'goal-earned', onclick: sheetRewards }, h('div', { class: 'tile-k' }, t('goal.earned'), ' ', icon('info', 12)), h('div', { class: 'tile-v good', 'data-rig': 'goal-earned-v' }, Number.isSafeInteger(R.proven?.earned) ? `+${nim(prog.earned)}` : earnedLabel())),
+      h('button', { class: 'tile tile-btn', 'data-rig': 'goal-earned', onclick: () => sheetRewards(goal) }, h('div', { class: 'tile-k' }, t('goal.earned'), ' ', icon('info', 12)), h('div', { class: 'tile-v good', 'data-rig': 'goal-earned-v' }, Number.isSafeInteger(R.proven?.earned) ? `+${nim(prog.earnedAll)}` : earnedLabel())),
       h('div', { class: 'tile' }, h('div', { class: 'tile-k' }, t('goal.inWallet')), h('div', { class: 'tile-v' }, nim(prog.wallet))),
       h('div', { class: 'tile' }, h('div', { class: 'tile-k' }, t('goal.gifts')), h('div', { class: 'tile-v' }, nim(prog.gifts)))),
     stakeable ? h('button', { class: 'card notice gold', 'data-rig': 'stake-wallet', onclick: () => sheetSave(goal, { includeWallet: true }) },
@@ -905,13 +915,14 @@ function spentCard(goal, prog) {
   const back = goal.entries.some((e) => e.kind === 'withdraw' && e.status === 'ok');
   const out = R.staker && (R.staker.inactive > 0 || R.staker.retired > 0);
   if (!back || prog.stake > 0 || out || goal.closedAt) return null;
+  const left = prog.wallet > 0;
   return h('section', { class: 'card notice gold', 'data-rig': 'spend-card' },
     h('div', { class: 'notice-i' }, icon('bolt')),
     h('div', { class: 'grow' },
-      h('b', {}, t('spend.backTitle')),
-      h('div', { class: 'small mute' }, t('spend.backBody')),
+      h('b', {}, left ? t('spend.backTitle') : t('spend.spentTitle')),
+      h('div', { class: 'small mute' }, left ? t('spend.backBody') : t('spend.spentBody')),
       h('div', { class: 'reached-acts' },
-        h('button', { class: 'btn small', 'data-rig': 'spend-pay', onclick: () => sheetPayInvoice(goal) }, icon('bolt', 16), t('spend.pay')),
+        left ? h('button', { class: 'btn small', 'data-rig': 'spend-pay', onclick: () => sheetPayInvoice(goal) }, icon('bolt', 16), t('spend.pay')) : null,
         h('button', { class: 'btn small ghost', 'data-rig': 'spend-done', onclick: () => markDone(goal) }, t('spend.markDone')))));
 }
 
@@ -992,9 +1003,10 @@ function entryRow(e) {
   }[e.kind] || e.kind;
   if (e.kind === 'spend') {
     return h('div', { class: 'entry spend' },
-      h('div', {}, h('div', { class: 'small' }, label), h('div', { class: 'tiny mute' }, day(e.at))),
+      h('div', {}, h('div', { class: 'small' }, label), h('div', { class: 'tiny mute' }, day(e.at)),
+        e.paid > e.luna ? h('div', { class: 'tiny mute', 'data-rig': 'spend-rest' }, t('entry.spendRest', { amount: nim(e.paid) })) : null),
       h('div', { class: 'entry-v' }, e.luna ? `−${nim(e.luna)}` : '',
-        e.hash ? h('a', { class: 'tiny', href: C.explorerTx(e.hash), target: '_blank', rel: 'noopener noreferrer' }, t('entry.proof')) : null));
+        e.hash ? proof(e.hash) : null));
   }
   const sign = e.kind === 'withdraw' || e.kind === 'move' ? '−' : '+';
   const status = e.status === 'pending' ? t('entry.pending') : e.status === 'failed' ? t('entry.failed') : '';
@@ -1003,7 +1015,7 @@ function entryRow(e) {
       h('div', { class: 'small' }, label),
       h('div', { class: 'tiny mute' }, day(e.at), e.kind === 'gift' && e.from ? ` · ${shortAddress(e.from)}` : '', status ? ` · ${status}` : '')),
     h('div', { class: 'entry-v' }, `${sign}${nim(e.luna)}`,
-      e.hash ? h('a', { class: 'tiny', href: C.explorerTx(e.hash), target: '_blank', rel: 'noopener noreferrer' }, t('entry.proof')) : null));
+      e.hash ? proof(e.hash) : null));
 }
 
 function viewHow() {
@@ -1069,8 +1081,8 @@ function sheetGoal(goal = null, presetName = '', { from = null } = {}) {
     const weeklyLuna = weekly.value.trim() ? toLuna(weekly.value) : 0;
     if (J.linkish(J.cleanText(name.value, 40))) { err.textContent = t('form.errNameLink'); return; }
     if (!cleanName) { err.textContent = t('form.errName'); return; }
-    if (!luna || luna < LUNA) { err.textContent = t('form.errTarget'); return; }
-    if (weeklyLuna === null) { err.textContent = t('form.errWeekly'); return; }
+    if (!luna || luna < LUNA) { err.textContent = amountError(target.value, t('form.errTarget')); return; }
+    if (weeklyLuna === null) { err.textContent = amountError(weekly.value, t('form.errWeekly')); return; }
     if (date.value && Number.isNaN(Date.parse(date.value))) { err.textContent = t('form.errDate'); return; }
     if (goal) {
       Object.assign(goal, { name: cleanName, target: luna, date: date.value || null, weekly: weeklyLuna, every, icon: icn });
@@ -1140,12 +1152,17 @@ async function sheetSave(goal, { includeWallet = false, first = false, suggest =
   const due = G.dueNow(goal, Date.now());
   const preset = includeWallet ? 0 : (due?.left ?? 0);
   // Nothing staked yet: fill in what the wallet can spare, as a suggestion the user edits. Never more than the balance.
+  // With a plan, the first saving is the plan's next amount, never the whole target (or less if the wallet is short).
+  const planned = goal.weekly ? (G.nextSave(goal, Date.now())?.amount ?? 0) : 0;
   const suggested = (first || suggest) && !includeWallet && keep === null
-    ? N.firstSuggestion({ spendable: R.spendable, noted: notedInWallet(), staker: R.staker, left: prog.left })
+    ? N.firstSuggestion({ spendable: R.spendable, noted: notedInWallet(), staker: R.staker, left: prog.left, planned })
     : 0;
   const start = keep ?? (suggested ? plainNim(suggested) : preset ? String(Math.ceil(preset / LUNA)) : '');
   const amount = h('input', { type: 'text', inputmode: 'decimal', value: start, placeholder: '0', autocomplete: 'off', 'data-rig': 's-amount' });
-  const suggestNote = suggested ? h('p', { class: 'tiny mute', 'data-rig': 's-suggested' }, t('save.suggested', { amount: nim(R.spendable) })) : null;
+  const byPlan = suggested && planned && suggested >= planned;
+  const suggestNote = suggested ? h('p', { class: 'tiny mute', 'data-rig': 's-suggested' }, byPlan ? t(`save.planned.${per(goal)}`) : t('save.suggested', { amount: nim(R.spendable) })) : null;
+  let edited = false; // once the user types, the suggestion note stays away, even if they type the same number
+  amount.addEventListener('input', () => { edited = true; });
   const info = h('div', { class: 'route' });
   const fiatLine = h('p', { class: 'tiny mute' });
   const btn = h('button', { class: 'btn primary wide', 'data-rig': 's-submit' }, t('save.go'));
@@ -1181,13 +1198,13 @@ async function sheetSave(goal, { includeWallet = false, first = false, suggest =
     } else if (route.route === 'aside') {
       kids.push(h('p', { class: 'small' }, t('save.routeAside', { amount: nim(route.short) })));
     } else if (typed === null) {
-      kids.push(h('p', { class: 'tiny bad' }, t('form.errAmount')));
+      kids.push(h('p', { class: 'tiny bad' }, amountError(amount.value, t('form.errAmount'))));
     } else {
       kids.push(h('p', { class: 'small mute' }, t('save.hint')));
     }
     if (tooMuch) kids.push(h('p', { class: 'tiny bad' }, t('save.tooMuch', { amount: nim(R.spendable) })));
     if (tooMuch && R.wallet > R.spendable) kids.push(h('p', { class: 'tiny mute' }, t('save.arriving', { amount: nim(R.wallet - R.spendable) })));
-    if (suggestNote) suggestNote.hidden = amount.value !== start;
+    if (suggestNote) suggestNote.hidden = edited || amount.value !== start;
     if (R.wallet === 0 && R.walletComplete) kids.push(h('p', { class: 'tiny warn' }, t('save.empty')));
     else if (route.route === 'aside' && R.walletComplete && newMoney + noted > R.wallet) kids.push(h('p', { class: 'tiny warn' }, t('save.asideOver', { amount: nim(R.wallet) })));
     info.replaceChildren(...kids);
@@ -1291,7 +1308,7 @@ function sheetQR(link, title, body) {
 }
 
 function sheetShare(goal) {
-  const link = I.inviteLink(goal, st.address, R.network);
+  const link = I.inviteLink(goal, st.address, R.network, DEMO);
   if (!J.decodeInvite(new URL(link).searchParams.get('j'))) {
     openSheet(t('share.title'), h('div', { class: 'form' },
       h('p', { class: 'small warn', 'data-rig': 'share-badname' }, t('share.badName')),
@@ -1338,7 +1355,8 @@ function sheetShare(goal) {
 }
 
 /** How rewards reach the stake, and what Kuza has seen arrive. Everything here is read from the chain or this phone. */
-function sheetRewards() {
+function sheetRewards(goal = null) {
+  if (!Array.isArray(goal?.entries)) goal = null;
   const pool = poolOf(R.staker?.delegation);
   const rate = rateLine();
   const events = [...(st.rewards?.events || [])].reverse();
@@ -1348,6 +1366,8 @@ function sheetRewards() {
     h('div', { class: 'rw-total', 'data-rig': 'rw-total' }, h('div', { class: 'tiny mute' }, t('rw.total')),
       Number.isSafeInteger(proven) ? amountBlock(total) : h('div', { class: 'num-unknown' }, earnedLabel())),
     proven === null ? h('p', { class: 'small warn', 'data-rig': 'rw-unknown' }, t('rw.unknown')) : null,
+    // Opened from a goal: the same number its Earned tile shows, so the two never disagree.
+    goal && Number.isSafeInteger(proven) ? h('p', { class: 'small', 'data-rig': 'rw-goal' }, t('rw.goal', { amount: `+${nim(goalProgress(goal).earnedAll)}`, name: goal.name })) : null,
     events.length
       ? h('section', {}, h('h3', {}, t('rw.seen')), events.slice(0, 8).map((e) => h('div', { class: 'entry' },
         h('div', {}, h('div', { class: 'small' }, t('rw.event')), h('div', { class: 'tiny mute' }, when(e.at))),
@@ -1375,7 +1395,7 @@ function sheetReached(goal) {
     h('div', { class: 'card flat' },
       row(t('reached.saved'), nim(prog.saved)),
       prog.gifts ? row(t('goal.gifts'), nim(prog.gifts)) : null,
-      row(t('goal.earned'), `+${nim(prog.earned)}`),
+      row(t('goal.earned'), `+${nim(prog.earnedAll)}`),
       row(t('reached.took'), days < 1 ? t('reached.today') : tn('reached.days', Math.round(days)))),
     h('p', { class: 'small' }, t('reached.choose')),
     h('button', { class: 'btn primary wide', 'data-rig': 'rs-next', onclick: () => sheetGoal(null, '', { from: goal }) }, t('reached.next')),
@@ -1404,7 +1424,10 @@ function sheetUse(goal) {
       step(2, t('use.s2'), t('use.s2b')),
       step(3, t('use.s3'), t('use.s3b'))) : null,
     staked ? h('button', { class: 'btn primary wide', 'data-rig': 'use-start', onclick: () => sheetWithdraw(goal) }, t('use.start')) : null,
-    h('button', { class: `btn wide ${staked ? '' : 'primary'}`, 'data-rig': 'use-pay', onclick: () => sheetPayInvoice(goal) }, icon('bolt', 18), t('spend.pay')),
+    // Paying is offered only for what this goal holds in the wallet; staked NIM has to come out first.
+    prog.wallet > 0
+      ? h('button', { class: `btn wide ${staked ? '' : 'primary'}`, 'data-rig': 'use-pay', onclick: () => sheetPayInvoice(goal) }, icon('bolt', 18), t('spend.pay'))
+      : h('p', { class: 'tiny mute', 'data-rig': 'use-pay-later' }, t('use.payLater')),
     h('p', { class: 'tiny mute' }, t('use.honest'))));
 }
 
@@ -1415,6 +1438,7 @@ function sheetPayInvoice(goal) {
   const btn = h('button', { class: 'btn primary wide', 'data-rig': 'ln-pay', disabled: true }, icon('bolt', 18), t('spend.payGo'));
   let checked = null;
   let sending = false;
+  const holds = goal ? G.parts(goal).wallet : 0;
   const check = () => {
     checked = P.checkInvoice(input.value, R.network);
     msg.className = `tiny ${checked.ok ? 'good' : input.value.trim() ? 'bad' : 'mute'}`;
@@ -1425,7 +1449,9 @@ function sheetPayInvoice(goal) {
   };
   input.addEventListener('input', check);
   btn.addEventListener('click', async () => {
-    if (sending || !checked?.ok) return;
+    if (sending) return;
+    check(); // again now: an invoice can expire while the sheet is open
+    if (!checked?.ok) return;
     const provider = W.getProvider();
     if (typeof provider?.payLightningInvoice !== 'function') { toast(t('err.update'), 'bad', 6000); return; }
     sending = true;
@@ -1456,7 +1482,12 @@ function sheetPayInvoice(goal) {
       forgetWallet();
       if (hash) {
         const tx = await C.waitForTx(hash, { tries: 20 }).catch(() => null);
-        if (tx && Number.isSafeInteger(tx.value)) { entry.luna = tx.value; saveState(); }
+        // Booked against the goal: never more than it held in the wallet. The whole payment is kept for the history.
+        if (tx && Number.isSafeInteger(tx.value)) {
+          entry.luna = goal ? G.spendPart(goal, tx.value) : tx.value;
+          if (tx.value > entry.luna) entry.paid = tx.value;
+          saveState();
+        }
       }
       await rereadWallet();
       if (!sheetOpen()) render();
@@ -1482,6 +1513,7 @@ function sheetPayInvoice(goal) {
   });
   openSheet(t('spend.title'), h('div', { class: 'form', 'data-rig': 'ln-sheet' },
     h('p', { class: 'small' }, t('spend.body')),
+    goal ? h('p', { class: 'small warn', 'data-rig': 'ln-holds' }, t('spend.goalHas', { amount: nim(holds) })) : null,
     field(t('spend.label'), input),
     msg,
     btn,
@@ -1551,7 +1583,7 @@ function sheetWithdraw(goal) {
     } else if (res.reason === 'too_much') {
       kids.push(h('p', { class: 'tiny bad' }, t('wd.tooMuch', { amount: nim(res.max) })));
     } else if (res.reason === 'invalid') {
-      kids.push(h('p', { class: 'tiny bad' }, t('form.errAmount')));
+      kids.push(h('p', { class: 'tiny bad' }, amountError(amount.value, t('form.errAmount'))));
     }
     msg.replaceChildren(...kids);
     btn.disabled = !res.ok;
@@ -1652,7 +1684,7 @@ function giftList(notes = false) {
 }
 
 /** The address of this invite as it should be shared and opened: always the short public form. */
-const jarLink = (jar) => I.inviteLink(jar, jar.owner, jar.net);
+const jarLink = (jar) => I.inviteLink(jar, jar.owner, jar.net, DEMO);
 
 function viewJar() {
   const jar = R.jar;
@@ -1694,8 +1726,10 @@ function viewJar() {
   btn.addEventListener('click', async () => {
     if (R.jarSending) return;
     const luna = toLuna(amount.value);
-    if (!luna) { err.textContent = t('form.errAmount'); return; }
+    if (!luna) { err.textContent = amountError(amount.value, t('form.errAmount')); return; }
     if (luna < LUNA) { err.textContent = t('jar.min'); return; }
+    // The owner's page hides link-like notes, so such a note would go on chain for good and never be seen: ask first.
+    if (J.noteRefused(note.value)) { err.textContent = t('jar.errNoteLink'); return; }
     err.textContent = '';
     R.jarSending = true;
     btn.disabled = true;
@@ -1837,7 +1871,7 @@ function renderJarDone(luna, hash, before = 0) {
       h('h1', {}, t('jar.thanks')),
       h('p', { class: 'mute' }, t('jar.thanksBody', { amount: nim(luna), name: jar.name })),
       h('p', { class: 'small', 'data-rig': 'thanks-total' }, t('jar.progress', { amount: fmtNim(after, lang(), 0), target: nim(jar.target, 0) }), people ? ` · ${tn('jar.people', people)}` : ''),
-      /^[0-9a-fA-F]{64}$/.test(hash || '') ? h('a', { class: 'tiny', href: C.explorerTx(hash), target: '_blank', rel: 'noopener noreferrer', 'data-rig': 'thanks-proof' }, t('entry.proof')) : null),
+      /^[0-9a-fA-F]{64}$/.test(hash || '') ? proof(hash, 'thanks-proof') : null),
     h('section', { class: 'card own-goal', 'data-rig': 'thanks-own' },
       h('h3', {}, t('thanks.ownTitle')),
       h('p', { class: 'small' }, t('thanks.ownBody')),
