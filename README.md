@@ -145,6 +145,8 @@ Still true, and known:
 - Kuza has no Bitcoin price, so before paying it can't say whether an invoice costs more than the goal holds. It shows
   what the goal holds; Nimiq Pay shows the price in NIM before you approve. Anything above the goal's NIM is paid from
   the rest of your wallet and isn't booked against the goal.
+- A short name whose ending is a real web domain ending is still refused, for example "B.Day" (.day is one); common
+  degrees such as B.Sc and B.Com are allowed by name.
 - Withdrawals booked before 7 November keep their old meaning: that NIM left the goal.
 - These fixes ran in the demo and in the tests, not yet on a real phone.
 
