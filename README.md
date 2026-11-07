@@ -35,8 +35,11 @@ page with a demo that uses pretend NIM.)
   with no transaction, because the NIM stays where it is), use the money, or raise the target and keep it growing.
 - **Using the money:** the real unstaking path and wait, then pay any Bitcoin Lightning invoice from your wallet. Kuza
   hands the invoice to Nimiq Pay, which shows the price, lets you pay with NIM or USDT and asks you to approve. Kuza
-  itself sells nothing and swaps nothing.
-- **Breaking a goal:** shows the real unstaking path and the real wait, with live block numbers.
+  itself sells nothing and swaps nothing. Paying is offered once the goal has NIM in your wallet; a payment is booked
+  against the goal only up to what it holds there.
+- **Breaking a goal:** shows the real unstaking path and the real wait, with live block numbers. NIM taken out of the
+  stake stays with its goal, set aside in your wallet with the rewards it earned, until you spend it or mark the goal
+  done.
 - **Friends chip in:** a short invite link, a ready message to copy and a QR code. Opened in a phone browser, the link
   shows the goal, one button into Nimiq Pay (on Android it falls back to the Play Store when the app isn't there) and
   what Nimiq Pay is. A gift goes from the friend's wallet straight to your address with a note, which Kuza reads
@@ -110,6 +113,41 @@ payout reached the stake on 7 November. Kuza's Earned, proven from the chain (st
 1.00054 NIM, and the live site shows +1 NIM for the wallet; it has not been photographed on the phone yet. All wallets
 above are our own test wallets; we know of no outside user yet.
 
+## Fixed after outside testing (7 Nov)
+
+Outside testers went through the browser demo and the code and reported these. Each one was reproduced first and now
+has a test that fails on the old code:
+
+- Paying from a goal whose NIM was all still in the stake was offered, paid from other money, and booked a payment
+  bigger than the goal against it. Now paying waits until the goal has NIM in the wallet, and never books more than
+  that.
+- An expired Lightning invoice (one from 2017) was accepted. Kuza now reads the invoice's time and expiry (one hour
+  when it names none) and says it has expired. The payment sheet also says how much the goal holds.
+- Ordinary names such as "B.Sc fees", "St.Mary school", "Gift for J.Smith" or "Fix roof @home" were refused as web
+  addresses. They pass now; addresses, @handles and Nimiq addresses are still refused.
+- A friend's note was hidden from the owner when it looked like a link, after it had already gone on chain. The
+  friend's form now checks the note before anything is sent.
+- "1,000" got "Set a target of at least 1 NIM". "2,000.50" and "10.000,50" are now read; "1,000" on its own (a
+  thousand, or one?) asks for the amount without separators.
+- With a plan of 250 a week, the first saving filled in the whole target. It fills in the plan's amount now.
+- Taking a goal's NIM out of the stake dropped the goal to 0% at once and offered to add the same NIM back. The NIM
+  now stays with the goal until it is spent, a spend can no longer swallow a later gift, and the week's saving counts
+  what actually stayed in the goal.
+- After taking everything out, the goal's Earned said +0 while the rewards sheet said what it had earned. Both show
+  the same now.
+- The counter said "wallets use Kuza"; it says "wallets have connected", which is what it counts.
+- In the demo, invite links left the demo (and asked the real network about the pretend address), and "View on chain"
+  opened the real explorer for made-up transactions. Demo links stay in the demo and demo transactions are labelled
+  pretend.
+
+Still true, and known:
+
+- Kuza has no Bitcoin price, so before paying it can't say whether an invoice costs more than the goal holds. It shows
+  what the goal holds; Nimiq Pay shows the price in NIM before you approve. Anything above the goal's NIM is paid from
+  the rest of your wallet and isn't booked against the goal.
+- Withdrawals booked before 7 November keep their old meaning: that NIM left the goal.
+- These fixes ran in the demo and in the tests, not yet on a real phone.
+
 ## Who has used it
 
 Kuza counts each wallet once, when it connects on mainnet. Only a keyed hash is stored, so the count can't say whose
@@ -166,6 +204,7 @@ npm test                                # logic and translations
 node test/ui/drive.mjs /tmp/kuza-ui     # needs google-chrome; drives the demo and keeps screenshots
 node test/ui/drive-v3.mjs /tmp/kuza-v3  # plans, rewards, sharing, Lightning, the invite page (also needs zbarimg)
 node test/ui/drive-demo-chain.mjs /tmp/kuza-demo  # the demo's pretend chain survives a reload; Reset demo
+node test/ui/drive-fixes.mjs /tmp/kuza-fixes      # the fixes after outside testing, walked through in the demo
 node test/qr-decode.mjs /tmp/kuza-qr    # QR codes read back by zbarimg
 ```
 
