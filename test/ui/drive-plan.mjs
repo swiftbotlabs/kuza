@@ -205,6 +205,7 @@ async function main() {
     check(`landed: withdraw ${fromStake} booked, then taken off the goal; the goal keeps ${300 - fromStake} staked, 0 set aside`, w && w.luna === fromStake * NIM && JSON.stringify(outs()) === JSON.stringify([20, Number(ready.replace(/,/g, '')), fromStake]) && !s.unstake
       && (await tile(t, 'In your stake')).includes(`${300 - fromStake} NIM`) && (await tile(t, 'Set aside')).includes(' 0 NIM'));
     check('the goal is still open (not deleted, not broken)', !goal.closedAt && (await t.has('[data-rig=save]')));
+    check('below 25% again: the "quarter of the way" moment is no longer shown', (await text(t, '.goal-hero')).includes('14%') && !(await t.has('[data-rig=mark-banner]')));
     await t.shot(`${OUT}/p10-after-stake-take-out.png`);
 
     // ---- The link in the other languages ----

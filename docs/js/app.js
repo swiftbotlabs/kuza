@@ -914,6 +914,8 @@ function viewGoal(goal) {
 /** The 25 / 50 / 75% moment, shown on the goal until the user leaves it. */
 function markBanner(goal) {
   if (!R.banner || R.banner.id !== goal.id) return null;
+  // Taken back below the mark since (Take some out): the moment no longer describes the goal.
+  if (goalProgress(goal).ratio * 100 < R.banner.mark) return null;
   return h('div', { class: 'card notice gold mark', 'data-rig': 'mark-banner', role: 'status' },
     h('div', { class: 'notice-i' }, icon('flame')),
     h('div', { class: 'grow' }, h('b', {}, t(`mark.${R.banner.mark}`)), h('div', { class: 'small mute' }, t('mark.body', { name: goal.name }))));
