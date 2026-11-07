@@ -7,6 +7,35 @@ const BECH32 = '[02-9ac-hj-np-z]';
 const BOLT11 = new RegExp(`^(lnbcrt|lntbs|lntb|lnbc)(\\d+[munp]?)?1${BECH32}{50,}$`);
 const LNURL = new RegExp(`^lnurl1${BECH32}{20,}$`);
 const MAX_LEN = 2048;
+const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+
+function polymod(values) {
+  const G = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let chk = 1;
+  for (const v of values) {
+    const top = chk >>> 25;
+    chk = ((chk & 0x1ffffff) << 5) ^ v;
+    for (let i = 0; i < 5; i++) if ((top >>> i) & 1) chk ^= G[i];
+  }
+  return chk >>> 0;
+}
+
+/** Is this a bech32 string with a correct checksum (BIP-173; BOLT11 and LNURL use it, without the 90-character limit)? */
+export function bech32Valid(str) {
+  if (typeof str !== 'string' || str !== str.toLowerCase() && str !== str.toUpperCase()) return false;
+  const s = str.toLowerCase();
+  const pos = s.lastIndexOf('1');
+  if (pos < 1 || pos + 7 > s.length) return false;
+  const hrp = [...s.slice(0, pos)].map((c) => c.charCodeAt(0));
+  if (hrp.some((c) => c < 33 || c > 126)) return false;
+  const data = [];
+  for (const c of s.slice(pos + 1)) {
+    const d = CHARSET.indexOf(c);
+    if (d < 0) return false;
+    data.push(d);
+  }
+  return polymod([...hrp.map((c) => c >> 5), 0, ...hrp.map((c) => c & 31), ...data]) === 1;
+}
 
 /** BTC amount of a BOLT11 amount part (e.g. 2500u), in satoshis; null if it isn't a whole number of satoshis. */
 export function bolt11Sats(part) {
@@ -24,17 +53,18 @@ export function bolt11Sats(part) {
 /**
  * Clean up what the user pasted and say whether it's worth handing to the wallet.
  * Returns { ok: true, invoice, kind: 'bolt11' | 'lnurl', sats } or { ok: false, reason }:
- *   empty, long, notLightning, wrongNet (a test invoice on mainnet or the other way round), noAmount (Nimiq Pay only
- *   pays invoices that name an amount).
+ *   empty, long, notLightning, damaged (the checksum fails: a character changed or went missing on the way), wrongNet
+ *   (a test invoice on mainnet or the other way round), noAmount (Nimiq Pay only pays invoices that name an amount).
  */
 export function checkInvoice(input, network = 'mainnet') {
   if (typeof input !== 'string') return { ok: false, reason: 'empty' };
   const text = input.replace(/\s+/g, '').replace(/^lightning:/i, '').toLowerCase();
   if (!text) return { ok: false, reason: 'empty' };
   if (text.length > MAX_LEN) return { ok: false, reason: 'long' };
-  if (LNURL.test(text)) return { ok: true, invoice: text, kind: 'lnurl', sats: null };
+  if (LNURL.test(text)) return bech32Valid(text) ? { ok: true, invoice: text, kind: 'lnurl', sats: null } : { ok: false, reason: 'damaged' };
   const m = BOLT11.exec(text);
   if (!m) return { ok: false, reason: 'notLightning' };
+  if (!bech32Valid(text)) return { ok: false, reason: 'damaged' };
   const test = m[1] !== 'lnbc';
   if (test !== (network === 'testnet')) return { ok: false, reason: 'wrongNet' };
   if (!m[2]) return { ok: false, reason: 'noAmount' };

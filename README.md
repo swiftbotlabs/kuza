@@ -67,6 +67,7 @@ the chain:
 | Retire the released 60 NIM, after the cooling-off | [`0386938fbc602dea…`](https://nimiq.watch/#0386938fbc602dea0fcfe92332731a8b0d197c5588ba66f30c90fe5a896d3768) | 65,924,317 |
 | Remove: 60 NIM from the staking contract back to the wallet | [`fbd6cde2ef983414…`](https://nimiq.watch/#fbd6cde2ef9834146a0ec0e608cdab924982819549c9658f8e115e0babe58eb2) | 65,924,337 |
 | A gift through the new invite link, 10 NIM, from the second phone | [`99dfdcce6410453b…`](https://nimiq.watch/#99dfdcce6410453bdc92552d0fdc413fcdcc362e76f95103c5f585b320b580f4) | 66,205,771 |
+| A Lightning payment from a goal, 30 sats paid with 82.05884 NIM, from the second phone | [`87d870217979881c…`](https://nimiq.watch/#87d870217979881c949d33bdf534ccced31cd0f7efd46b6e19702c110306243a) | 66,242,444 |
 
 That is the whole cycle, including the way out: Kuza had worked out the release at block 65,923,200, the retire went
 through at 65,924,317, and after the two approvals the staker shows 1,100 NIM active, 0 inactive and 0 retired. Also
@@ -86,8 +87,22 @@ On 6 November, with v3, on mainnet:
   rewards sheet matching it, and "Copy invite message" as the main share button inside Nimiq Pay.
 - **Security headers:** Kuza still loads inside Nimiq Pay with the headers that forbid framing.
 
+On 7 November, on mainnet, on the second phone:
+
+- **A Lightning payment through Kuza:** a goal with 70 NIM set aside reached 100%; "Use the money", then "Pay a
+  Lightning invoice" with a 30-sat invoice. Kuza handed it to Nimiq Pay, which asked "Pay Bitcoin Lightning" with NIM
+  or USDT on Polygon; with NIM its confirm sheet read "Merchant receives 0.0000003 BTC, You spend 82.05884 NIM, Network
+  fee (included) 0.00000001 BTC, Service fee (included) 0.20464 NIM". After the approval Kuza said "Payment
+  submitted" and listed "Paid a Lightning invoice · 30 sats". On chain: 82.05884 NIM left the second phone's wallet
+  into an HTLC, the Nimiq side of Nimiq Pay's swap, at 05:28:00 UTC and executed (the last row above). What this proves: the whole path
+  from Kuza to a paid swap on the Nimiq side. What it doesn't: we did not see the Lightning payment arrive at the
+  recipient ourselves.
+- **Found and fixed the same day:** a garbled paste now fails Kuza's own check (the invoice checksum) instead of
+  reaching Nimiq Pay; "Use the money" no longer calls savings set aside in the wallet "in your own stake"; and a
+  payment now comes off what the goal holds, so the goal no longer shows the 70 NIM as still set aside.
+
 Not tested yet on a real phone: an iPhone; the invite page's button on a phone without Nimiq Pay installed (the Play
-Store fallback); a Lightning payment; monthly plans and moving a goal on (these run in the demo and the tests). And rewards. Earned still shows +0 because no reward has reached the stake yet: the pool adds
+Store fallback); monthly plans and moving a goal on (these run in the demo and the tests). And rewards. Earned still shows +0 because no reward has reached the stake yet: the pool adds
 rewards to a stake only once they reach 1 NIM, and at 1,100 NIM that takes about six and a half days. The pool's own
 figures showed 0.495 NIM built up on 4 November, so the first reward is due around 8 November. All wallets above are
 our own test wallets; we know of no outside user yet.

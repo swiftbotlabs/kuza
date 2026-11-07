@@ -18,7 +18,7 @@ const TEMPLATE_VALUES = {
   'plan.title.': ['week', 'month'],
   'plan.streak.': ['week', 'month'],
   'mark.': ['25', '50', '75'],
-  'spend.err.': ['empty', 'long', 'notLightning', 'wrongNet', 'noAmount'],
+  'spend.err.': ['empty', 'long', 'notLightning', 'damaged', 'wrongNet', 'noAmount'],
 };
 const templates = [];
 for (const m of src.matchAll(/\b(tn?)\(`([a-zA-Z0-9.]+)\$\{[^}]+\}([a-zA-Z0-9.]*)`/g)) templates.push({ plural: m[1] === 'tn', pre: m[2], post: m[3] });

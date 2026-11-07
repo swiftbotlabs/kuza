@@ -71,6 +71,7 @@ export function parts(goal) {
       case 'assign': stake += e.luna; break;
       case 'withdraw': stake -= e.luna; break;
       case 'move': stake -= e.luna; break;
+      case 'spend': wallet -= e.luna; break; // paid out of what the goal held in the wallet
       default: break;
     }
   }

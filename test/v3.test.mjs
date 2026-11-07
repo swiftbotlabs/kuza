@@ -1,5 +1,6 @@
 // Invite links, deep links, monthly plans, milestones, rewards seen arriving, and the Lightning invoice check.
 import test from 'node:test';
+import { ln, withChecksum } from './fixtures/lightning.mjs';
 import assert from 'node:assert/strict';
 import * as J from '../docs/js/jar.js';
 import * as I from '../docs/js/invite.js';
@@ -198,23 +199,39 @@ test('rewards: booked as they arrive, a day at a time, never while money is movi
   assert.equal(R.lastReward(null), null);
 });
 
-test('Lightning invoices: the right network, an amount, nothing else', () => {
-  const body = 'pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypq';
-  const main = `lnbc2500u1${body}`;
+test('bech32 checksum: BIP-173 vectors, and the test helper agrees with them', () => {
+  for (const ok of ['A12UEL5L', 'a12uel5l', 'abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxw',
+    'split1checkupstagehandshakeupstreamerranterredcaperred2y9e3w', '?1ezyfcl']) assert.ok(P.bech32Valid(ok), ok);
+  for (const bad of ['a12uel5m', 'A12uEL5L', 'pzry9x0s0muk', '1pzry9x0s0muk', 'x1b4n0q5v', 'li1dgmt3', 'A1G7SGD8', '10a06t8', '1qzzfhee', 'abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxx'])
+    assert.ok(!P.bech32Valid(bad), bad);
+  assert.equal(withChecksum('a', ''), 'a12uel5l');
+  assert.equal(withChecksum('abcdef', 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'), 'abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxw');
+});
+
+test('Lightning invoices: the right network, an amount, an intact checksum, nothing else', () => {
+  const main = ln('lnbc2500u');
   assert.deepEqual(P.checkInvoice(main), { ok: true, invoice: main, kind: 'bolt11', sats: 250000 });
   assert.deepEqual(P.checkInvoice(`  LIGHTNING:${main.toUpperCase()}\n`), { ok: true, invoice: main, kind: 'bolt11', sats: 250000 });
-  assert.equal(P.checkInvoice(`lnbc20m1${body}`).sats, 2000000);
-  assert.equal(P.checkInvoice(`lnbc1101${body}`).sats, 110 * 1e8);
-  assert.equal(P.checkInvoice(`lnbc1${body}`).reason, 'noAmount');
-  assert.equal(P.checkInvoice(`lntb2500u1${body}`).reason, 'wrongNet');
-  assert.equal(P.checkInvoice(`lntb2500u1${body}`, 'testnet').ok, true);
+  assert.equal(P.checkInvoice(ln('lnbc20m')).sats, 2000000);
+  assert.equal(P.checkInvoice(ln('lnbc110')).sats, 110 * 1e8);
+  assert.equal(P.checkInvoice(ln('lnbc300n')).sats, 30);
+  assert.equal(P.checkInvoice(ln('lnbc')).reason, 'noAmount');
+  assert.equal(P.checkInvoice(ln('lntb2500u')).reason, 'wrongNet');
+  assert.equal(P.checkInvoice(ln('lntb2500u'), 'testnet').ok, true);
   assert.equal(P.checkInvoice(main, 'testnet').reason, 'wrongNet');
-  assert.equal(P.checkInvoice(`lnbcrt2500u1${body}`).reason, 'wrongNet');
+  assert.equal(P.checkInvoice(ln('lnbcrt2500u')).reason, 'wrongNet');
   const lnurl = 'lnurl1dp68gurn8ghj7um9wfmxjcm99e3k7mf0v9cxj0m385ekvcenxc6r2c35xvukxefcv5mkvv34x5ekzd3ev56nyd3hxqurzepexejxxepnxscrvwfnv9nxzcn9xq6xyefhvgcxxcmyxymnserxfq5fns';
   assert.deepEqual(P.checkInvoice(lnurl.toUpperCase()), { ok: true, invoice: lnurl, kind: 'lnurl', sats: null });
+  // A copy that went wrong on the way: one character changed, one dropped, one added, two swapped, the end cut off.
+  const swap = (s, i) => s.slice(0, i) + s[i + 1] + s[i] + s.slice(i + 2);
+  const flip = (s, i) => s.slice(0, i) + (s[i] === 'q' ? 'p' : 'q') + s.slice(i + 1);
+  for (const bad of [flip(main, 40), main.slice(0, 60) + main.slice(61), main.slice(0, 60) + 'q' + main.slice(60), swap(main, 70), main.slice(0, -3) + 'qqq',
+    flip(lnurl, 30), flip(ln('lnbc'), 20)]) {
+    assert.deepEqual(P.checkInvoice(bad), { ok: false, reason: 'damaged' }, bad.slice(0, 30));
+  }
   for (const [bad, why] of [['', 'empty'], [null, 'empty'], ['   ', 'empty'], ['bitcoin:bc1qxyz', 'notLightning'], ['hello@getalby.com', 'notLightning'],
-    [`lnbc2500u1${body}!`, 'notLightning'], ['lnbc2500u1short', 'notLightning'], [`lnbc2500x1${body}`, 'notLightning'], [`lnbc1p1${body}`, 'notLightning'],
-    [`lnbc2500u1${body}${'q'.repeat(2048)}`, 'long'], [`lnbc2500u1${body}b`, 'notLightning']]) {
+    [`${main}!`, 'notLightning'], ['lnbc2500u1short', 'notLightning'], [ln('lnbc2500x'), 'notLightning'], [ln('lnbc1p'), 'notLightning'],
+    [`${main}${'q'.repeat(2048)}`, 'long'], [`${main}b`, 'notLightning']]) {
     assert.deepEqual(P.checkInvoice(bad), { ok: false, reason: why }, String(bad).slice(0, 40));
   }
   assert.equal(P.bolt11Sats('10p'), 0.001);
@@ -231,7 +248,20 @@ test('wallet errors: a Lightning invoice paid twice is its own case', () => {
 
 test('every reason the invoice check gives has words in the app', async () => {
   const { dictionaries } = await import('../docs/js/i18n.js');
-  const body = 'pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypq';
-  const reasons = new Set(['', 'x', `lnbc1${body}`, `lntb5u1${body}`, 'q'.repeat(3000)].map((x) => P.checkInvoice(x).reason));
+  const reasons = new Set(['', 'x', ln('lnbc'), ln('lntb5u'), 'q'.repeat(3000), ln('lnbc5u').slice(0, -1) + 'q'].map((x) => P.checkInvoice(x).reason));
+  assert.equal(reasons.size, 6);
   for (const r of reasons) for (const d of Object.values(dictionaries)) assert.ok(d[`spend.err.${r}`], r);
+});
+
+test('a Lightning payment from a goal comes off what it held in the wallet, never below zero', () => {
+  const NIM = 1e5;
+  const g = G.newGoal({ id: 'llllll', name: 'Lightning test', target: 70 * NIM, now: Date.UTC(2026, 10, 7) });
+  g.entries.push({ kind: 'aside', luna: 70 * NIM, at: 1, status: 'ok' });
+  assert.equal(G.parts(g).wallet, 70 * NIM);
+  g.entries.push({ kind: 'spend', luna: 30 * NIM, at: 2, status: 'ok', sats: 30 });
+  assert.equal(G.parts(g).wallet, 40 * NIM);
+  // the real one: 82.05884 NIM paid from a goal holding 70 (the rest came from the wallet): the goal holds nothing now
+  g.entries.push({ kind: 'spend', luna: 8205884, at: 3, status: 'ok', sats: 30 });
+  assert.equal(G.parts(g).wallet, 0);
+  assert.equal(G.parts(g).stake, 0);
 });

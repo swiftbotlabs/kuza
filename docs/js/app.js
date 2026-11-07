@@ -1392,12 +1392,17 @@ function sheetUse(goal) {
   const eta = startRelease ? t('use.s1eta', { time: hours(startRelease - height) }) : t('wd.s2any');
   const step = (n, title, body) => h('li', { class: 'step' }, h('span', { class: 'step-n' }, n), h('div', {}, h('b', {}, title), h('div', { class: 'tiny mute' }, body)));
   const staked = prog.stake > 0 || (R.staker?.inactive ?? 0) > 0;
+  const inStake = prog.stake + prog.earned;
+  // Money set aside in the wallet can be spent now; only the staked part needs the three steps out.
+  const intro = !staked && prog.wallet > 0 ? t('use.walletOnly', { amount: nim(prog.wallet) })
+    : staked && prog.wallet > 0 ? t('use.mixed', { wallet: nim(prog.wallet), stake: nim(inStake) })
+      : t('use.intro', { amount: nim(inStake) });
   openSheet(t('use.title'), h('div', { class: 'form', 'data-rig': 'use-sheet' },
-    h('p', { class: 'small' }, t('use.intro', { amount: nim(prog.stake + prog.earned) })),
-    h('ol', { class: 'steps' },
+    h('p', { class: 'small', 'data-rig': 'use-intro' }, intro),
+    staked || !prog.wallet ? h('ol', { class: 'steps' },
       step(1, t('use.s1'), eta),
       step(2, t('use.s2'), t('use.s2b')),
-      step(3, t('use.s3'), t('use.s3b'))),
+      step(3, t('use.s3'), t('use.s3b'))) : null,
     staked ? h('button', { class: 'btn primary wide', 'data-rig': 'use-start', onclick: () => sheetWithdraw(goal) }, t('use.start')) : null,
     h('button', { class: `btn wide ${staked ? '' : 'primary'}`, 'data-rig': 'use-pay', onclick: () => sheetPayInvoice(goal) }, icon('bolt', 18), t('spend.pay')),
     h('p', { class: 'tiny mute' }, t('use.honest'))));

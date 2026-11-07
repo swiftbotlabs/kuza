@@ -5,6 +5,7 @@
 import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { serve, startChrome, newTab, sleep } from './harness.mjs';
+import { ln } from '../fixtures/lightning.mjs';
 
 const OUT = resolve(process.argv[2] || 'tmp-ui-demo-chain');
 const PORT = Number(process.env.KUZA_UI_PORT) || 8127;
@@ -104,6 +105,46 @@ async function main() {
     const fresh = await chain(t);
     check(`reset: pretend wallet 25,000 NIM, no stake, no history (${fresh.wallet / NIM} / ${fresh.stake} / ${fresh.txs})`, fresh.wallet === 25000 * NIM && fresh.stake === null && fresh.txs === 0);
     check('reset: no demo goals left', !(await t.eval(`(JSON.parse(localStorage.getItem('kuza.demo.mainnet') || 'null')?.goals || []).length`)));
+
+    // Savings set aside in the wallet (no stake): "Use the money" says they can be spent now, no three steps; a Lightning
+    // payment then comes off what the goal holds.
+    await t.waitFor('[data-rig=connect]');
+    await t.click('[data-rig=connect]');
+    await t.waitText('Pretend wallet');
+    await t.click('[data-rig=demo-yes]');
+    await t.waitFor('[data-rig=new-goal]');
+    await t.click('[data-rig=new-goal]');
+    await t.fill('[data-rig=f-name]', 'Lightning test');
+    await t.fill('[data-rig=f-target]', '70');
+    await t.click('[data-rig=f-submit]');
+    await t.waitText('Make your first saving');
+    await t.fill('[data-rig=s-amount]', '70');
+    await t.waitText('under the network');
+    await t.click('[data-rig=s-submit]');
+    await t.waitText('stays in your wallet');
+    for (let i = 0; i < 30 && !(await t.has('[data-rig=rs-use]')) && !(await t.has('[data-rig=r-use]')); i++) await sleep(200);
+    await t.click((await t.has('[data-rig=rs-use]')) ? '[data-rig=rs-use]' : '[data-rig=r-use]');
+    await t.waitFor('[data-rig=use-sheet]');
+    const use = await t.eval(`document.querySelector('[data-rig=use-intro]').innerText`);
+    check(`use the money, wallet-held goal: "spend it right away", no stake steps (${use})`, use.includes('70 NIM is set aside in your own wallet') && !(await t.has('[data-rig=use-sheet] .steps')) && !use.includes('in your own stake'));
+    await t.shot(`${OUT}/use-wallet-only.png`);
+    await t.click('[data-rig=use-pay]');
+    await t.waitFor('[data-rig=ln-sheet]');
+    await t.fill('[data-rig=ln-input]', ln('lnbc300n'));
+    await t.waitText('30 sats');
+    await t.click('[data-rig=ln-pay]');
+    await t.waitText('Pay with Bitcoin Lightning');
+    await t.click('[data-rig=demo-yes]');
+    await t.waitText('Payment submitted', 6000);
+    let left = null;
+    for (let i = 0; i < 40; i++) {
+      left = await t.eval(`(() => { const s = JSON.parse(localStorage.getItem('kuza.demo.mainnet')); const g = s.goals.find((x) => x.name === 'Lightning test');
+        const sp = g.entries.find((e) => e.kind === 'spend'); return sp && sp.luna ? document.body.innerText : null; })()`);
+      if (left) break;
+      await sleep(250);
+    }
+    check('after the payment the goal no longer shows the 70 NIM as set aside', !!left && /Set aside\s*\n?\s*0 NIM/.test(left) && !/Set aside\s*\n?\s*70 NIM/.test(left));
+    await t.shot(`${OUT}/after-lightning.png`);
 
     // A damaged saved chain is ignored as a whole: the demo starts fresh instead of failing.
     const bad = [

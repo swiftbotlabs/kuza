@@ -6,6 +6,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { serve, startChrome, newTab, sleep } from './harness.mjs';
+import { ln } from '../fixtures/lightning.mjs';
 
 const OUT = resolve(process.argv[2] || 'tmp-ui-v3');
 const SHOTS = `${OUT}/shots`;
@@ -15,7 +16,7 @@ const ANDROID = 'Mozilla/5.0 (Linux; Android 15; SM-A145F) AppleWebKit/537.36 (K
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1';
 const DESKTOP = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
 const OWNER = 'NQ49 DEMA 0000 0000 0000 0000 0000 0000 0001';
-const BODY = 'pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypq';
+
 
 const checks = [];
 const check = (name, ok) => { checks.push([name, Boolean(ok)]); console.log(ok ? 'ok  ' : 'FAIL', name); };
@@ -193,11 +194,13 @@ async function main() {
     const lnOff = () => t.eval(`document.querySelector('[data-rig=ln-pay]').disabled`);
     await t.fill('[data-rig=ln-input]', 'hello');
     check('invoice: junk refused', (await lnMsg()).includes("doesn't look like") && (await lnOff()));
-    await t.fill('[data-rig=ln-input]', `lntb2500u1${BODY}`);
+    await t.fill('[data-rig=ln-input]', ln('lntb2500u'));
     check('invoice: test network refused on mainnet', (await lnMsg()).includes('different network') && (await lnOff()));
-    await t.fill('[data-rig=ln-input]', `lnbc1${BODY}`);
+    await t.fill('[data-rig=ln-input]', ln('lnbc'));
     check('invoice: no amount refused', (await lnMsg()).includes('no amount') && (await lnOff()));
-    await t.fill('[data-rig=ln-input]', `lightning:LNBC2500U1${BODY.toUpperCase()}`);
+    await t.fill('[data-rig=ln-input]', ln('lnbc5u').slice(0, -2) + 'qq');
+    check('invoice: a damaged copy (checksum) is caught in Kuza, before the wallet', (await lnMsg()).includes('looks damaged') && (await lnOff()));
+    await t.fill('[data-rig=ln-input]', `lightning:${ln('lnbc2500u').toUpperCase()}`);
     check('invoice: valid one accepted with its amount', (await lnMsg()).includes('250,000 sats') && !(await lnOff()));
     await t.shot(`${SHOTS}/v3-09-lightning.png`);
     await t.click('[data-rig=ln-pay]');
@@ -218,7 +221,7 @@ async function main() {
       const asked = (await t.text()).includes('Pay with Bitcoin Lightning');
       return asked;
     };
-    const askedAgain = await payAgain(`LNBC2500U1${BODY.toUpperCase()}`);
+    const askedAgain = await payAgain(ln('lnbc2500u').toUpperCase());
     await t.shot(`${SHOTS}/v3-09b-invoice-refused.png`);
     check('invoice: reopened sheet, same invoice -> refused, the wallet is not asked again', !askedAgain && (await t.text()).includes("Don't pay it again") && (await t.eval('window.__kuzaDemo.chain.pays')) === 1);
     await t.click('[data-rig=sheet-close]');
@@ -227,11 +230,11 @@ async function main() {
     await sleep(1500);
     await still(t);
     await t.waitFor('[data-rig=r-use]', 8000);
-    check('invoice: after a reload it is still refused', !(await payAgain(`lnbc2500u1${BODY}`)) && (await t.eval('window.__kuzaDemo.chain.pays || 0')) === 0);
+    check('invoice: after a reload it is still refused', !(await payAgain(ln('lnbc2500u'))) && (await t.eval('window.__kuzaDemo.chain.pays || 0')) === 0);
     await t.click('[data-rig=sheet-close]');
     await sleep(250);
     // Cancelled in the wallet: nothing went out, so the same invoice may be tried again.
-    const B = `lnbc10u1${BODY.replace('qqqsyqcyq5', 'qqqsyqcyq6')}`;
+    const B = ln('lnbc10u', 'qq');
     check('invoice: first try of a new invoice asks the wallet', await payAgain(B));
     await t.click('[data-rig=demo-no]');
     await t.waitText('Nothing was sent');
@@ -243,7 +246,7 @@ async function main() {
     await t.click('[data-rig=sheet-close]');
     await sleep(250);
     // An unclear outcome may have paid: never asked again.
-    const Cv = `lnbc20u1${BODY.replace('qqqsyqcyq5', 'qqqsyqcyq7')}`;
+    const Cv = ln('lnbc20u', 'pp');
     await t.eval(`window.__kuzaDemo.failNext('TRANSACTION_OUTCOME_UNKNOWN', -32001, 'outcome unknown', {})`);
     await payAgain(Cv);
     await t.click('[data-rig=demo-yes]');
