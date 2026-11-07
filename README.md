@@ -37,6 +37,8 @@ page with a demo that uses pretend NIM.)
   hands the invoice to Nimiq Pay, which shows the price, lets you pay with NIM or USDT and asks you to approve. Kuza
   itself sells nothing and swaps nothing. Paying is offered once the goal has NIM in your wallet; a payment is booked
   against the goal only up to what it holds there.
+- **Taking some out:** part of a goal's NIM back without deleting it. What it holds in the wallet comes back at once;
+  staked NIM goes through the real unstaking path and comes off the goal when it lands.
 - **Breaking a goal:** shows the real unstaking path and the real wait, with live block numbers. NIM taken out of the
   stake stays with its goal, set aside in your wallet with the rewards it earned, until you spend it or mark the goal
   done.
@@ -107,16 +109,18 @@ On 7 November, on mainnet, on the second phone:
   reaching Nimiq Pay; "Use the money" no longer calls savings set aside in the wallet "in your own stake"; and a
   payment now comes off what the goal holds, so the goal no longer shows the 70 NIM as still set aside.
 
-Not tested yet on a real phone: an iPhone; the invite page's button on a phone without Nimiq Pay installed (the Play
-Store fallback); monthly plans and moving a goal on (these run in the demo and the tests). Rewards: the pool's first
-payout reached the stake on 7 November. Kuza's Earned, proven from the chain (stake minus deposits plus withdrawals), is
-1.00054 NIM, and the live site shows +1 NIM for the wallet; it has not been photographed on the phone yet. All wallets
-above are our own test wallets; we know of no outside user yet.
+An outside tester has opened Kuza inside Nimiq Pay on an iPhone and created a goal there; nothing has been staked from
+an iPhone yet. Not tested yet on a real phone: staking or taking NIM out on an iPhone; the invite page's button on a
+phone without Nimiq Pay installed (the Play Store fallback); monthly plans and moving a goal on (these run in the demo
+and the tests). Rewards: the pool's first payout reached the stake on 7 November. Kuza's Earned, proven from the
+chain (stake minus deposits plus withdrawals), is 1.00054 NIM, and the live site shows +1 NIM for the wallet; it has
+not been photographed on the phone yet. All wallets above are our own test wallets; apart from outside testers, we
+know of no outside user yet.
 
-## Fixed after outside testing (7 Nov)
+## Fixed after outside testing (7 and 8 Nov)
 
-Outside testers went through the browser demo and the code and reported these. Each one was reproduced first and now
-has a test that fails on the old code:
+Outside testers went through the browser demo, the code and the app on a phone, and reported these. Each one was
+reproduced first and now has a test that fails on the old code:
 
 - Paying from a goal whose NIM was all still in the stake was offered, paid from other money, and booked a payment
   bigger than the goal against it. Now paying waits until the goal has NIM in the wallet, and never books more than
@@ -139,6 +143,12 @@ has a test that fails on the old code:
 - In the demo, invite links left the demo (and asked the real network about the pretend address), and "View on chain"
   opened the real explorer for made-up transactions. Demo links stay in the demo and demo transactions are labelled
   pretend.
+- The plan's numbers moved with the clock: a goal made a minute earlier, with nothing due yet, showed as behind, by
+  different amounts on the home card and the goal page, and a plan taken from the suggestion was called late by 1 NIM.
+  One calculation now drives the badge, the pace line and the suggestion: weeks count from the goal's start, nothing is
+  due before the first week ends, and the plan and the suggestion are the same whole number.
+- Getting some NIM back meant deleting or breaking the goal. "Take some out", next to "Add to goal", now takes part of
+  it back and keeps the goal: what it holds in the wallet at once, staked NIM through the real cooling-off.
 
 Still true, and known:
 
@@ -207,6 +217,7 @@ node test/ui/drive.mjs /tmp/kuza-ui     # needs google-chrome; drives the demo a
 node test/ui/drive-v3.mjs /tmp/kuza-v3  # plans, rewards, sharing, Lightning, the invite page (also needs zbarimg)
 node test/ui/drive-demo-chain.mjs /tmp/kuza-demo  # the demo's pretend chain survives a reload; Reset demo
 node test/ui/drive-fixes.mjs /tmp/kuza-fixes      # the fixes after outside testing, walked through in the demo
+node test/ui/drive-plan.mjs /tmp/kuza-plan        # the plan math and "Take some out" (8 Nov), in the demo
 node test/qr-decode.mjs /tmp/kuza-qr    # QR codes read back by zbarimg
 ```
 
