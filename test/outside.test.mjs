@@ -53,8 +53,8 @@ test('A2: an expired invoice is refused (BOLT11 time + x, 1 hour when there is n
 
 // 'Mama B.Day' is not here: .day is a real top-level domain, so it is refused. A dot right after the name ('J.Smith.')
 // is refused too, as it could continue an address.
-const NAMES = ['B.Sc fees', 'M.Sc tuition', 'B.Com fees', 'M.Com fees', 'B.Ed fees', 'St.Mary school', 'Dr.Visit', 'Gift for J.Smith', 'Fix roof @home',
-  'Mt.Kenya trip', 'B.Tech fees', 'Lunch @work', 'Mr.Nimiq', 'Dr.Wallet'];
+const NAMES = ['B.Sc fees', 'M.Sc tuition', 'B.Com fees', 'B.Ed fees', 'St.Mary school', 'Dr.Visit', 'Gift for J.Smith', 'Fix roof @home',
+  'Mt.Kenya trip', 'Lunch @work', 'Mr.Nimiq', 'Dr.Wallet'];
 const ATTACKS = ['X.Com/help', 'T.Me/NimiqHelp', 'T.Me @nimiqhelp', 'Claim at Evil.Com', 'Dr.Gift', 'X.Io', 'A.Co', 'J.Smith.com', 'St.Mary.io', 'B.Sc@evil',
   'EvilB.Com', '-B.Com', 'a_B.Com', '1B.Com', 'B.Sc evil.com', 'x.com', 't.me/x', 'Visit Kuza.App', 'NIMIQ.Gift', 'Ｔ．Ｍｅ/x', 'B.Com:8080', 'DM @nimiq_support',
   '@homeoffice_x', 'DM @Nimiq', 'Mr.Gift card', 'St.Link', 'B.Sc/claim', 'Dr.Visit.Com', 'J.Smith.Com', 'B​.Sc.evil',
@@ -67,7 +67,11 @@ const ATTACKS = ['X.Com/help', 'T.Me/NimiqHelp', 'T.Me @nimiqhelp', 'Claim at Ev
   // Look-alike letters: a Cyrillic S in "Sbs" (mixed scripts), and all-Cyrillic tokens that read as B.Sc / Dr.Sbs.
   'Dr.Ѕbs', 'Mr.Ѕupport', 'В.Ѕс', 'Д.Ѕвѕ',
   // An Armenian o (not in the look-alike table) in X.Com: only the one-script rule catches it.
-  'X.C\u0585m', 'Dr.Sb\u0585'];
+  'X.C\u0585m', 'Dr.Sb\u0585',
+  // Second security read (8 Nov): endings written as a domain would be matched (ß as ss, accents dropped), six endings the
+  // embedded list lacked, and degrees whose ending is a real, registrable one.
+  'Mr.Preß', 'Dr.Glaß', 'X.Busineß', 'Dr.Fitneß', 'Dr.Swiß', 'Dr.Hotel', 'Mt.Helsinki', 'X.Juniper', 'Mr.Goo', 'Dr.Onion',
+  'X.Wolterskluwer', 'M.Com', 'B.Tech', 'M.Tech', 'M.Com fees', 'B.Tech fees', 'Dr.Cafe\u0301', 'Mr.Caf\u00e9'];
 
 test('A3: initials and short titles are names, not links; the shapes an address takes are still refused', () => {
   for (const name of NAMES) {
@@ -89,6 +93,13 @@ test('A3 positive control: the check is the full list of real top-level domains,
   // endings never on any blocklist, but real domains: refused; the same shape with a word that is no domain: a name
   for (const a of ['Mr.Xyz', 'Dr.Sbs', 'Ms.Lgbt', 'X.Fyi', 'Dr.Ninja', 'St.Kitchen']) assert.ok(J.linkish(a), a);
   for (const n of ['Mr.Xyzzy', 'Dr.Sbsx', 'St.Kitchens', 'Dr.Smith']) assert.ok(!J.linkish(n), n);
+  // "Preß" is refused because it is read as "press", not because "preß" is on the list; a folded word that is no
+  // ending still passes.
+  assert.ok(!J.TLDS.has('preß') && !J.TLDS.has('glaß') && J.TLDS.has('press') && J.TLDS.has('glass'));
+  assert.ok(J.linkish('Mr.Preß') && J.linkish('Dr.Glaß') && J.linkish('Dr.Caf\u00e9'));
+  for (const n of ['Mr.Weiß', 'Dr.Strauß', 'Mt.Élgon']) assert.ok(!J.linkish(n), n);
+  // Degrees: only B.Sc, M.Sc and B.Com are let through by name.
+  for (const d of ['B.Sc', 'M.Sc', 'B.Com']) assert.ok(!J.linkish(d), d);
 });
 
 test('A3: a friend\'s note with a degree in it reaches the owner; a link-like note is stopped before it is sent', () => {
