@@ -68,6 +68,7 @@ the chain:
 | Remove: 60 NIM from the staking contract back to the wallet | [`fbd6cde2ef983414…`](https://nimiq.watch/#fbd6cde2ef9834146a0ec0e608cdab924982819549c9658f8e115e0babe58eb2) | 65,924,337 |
 | A gift through the new invite link, 10 NIM, from the second phone | [`99dfdcce6410453b…`](https://nimiq.watch/#99dfdcce6410453bdc92552d0fdc413fcdcc362e76f95103c5f585b320b580f4) | 66,205,771 |
 | A Lightning payment from a goal, 30 sats paid with 82.05884 NIM, from the second phone | [`87d870217979881c…`](https://nimiq.watch/#87d870217979881c949d33bdf534ccced31cd0f7efd46b6e19702c110306243a) | 66,242,444 |
+| The swap's HTLC redeemed with the Lightning preimage, 6 seconds later | [`4e34eed227929e7d…`](https://nimiq.watch/#4e34eed227929e7d6e14ec2027690de28888fb13c53ae44d2763cbeef7753586) | 66,242,450 |
 
 That is the whole cycle, including the way out: Kuza had worked out the release at block 65,923,200, the retire went
 through at 65,924,317, and after the two approvals the staker shows 1,100 NIM active, 0 inactive and 0 retired. Also
@@ -94,18 +95,20 @@ On 7 November, on mainnet, on the second phone:
   or USDT on Polygon; with NIM its confirm sheet read "Merchant receives 0.0000003 BTC, You spend 82.05884 NIM, Network
   fee (included) 0.00000001 BTC, Service fee (included) 0.20464 NIM". After the approval Kuza said "Payment
   submitted" and listed "Paid a Lightning invoice · 30 sats". On chain: 82.05884 NIM left the second phone's wallet
-  into an HTLC, the Nimiq side of Nimiq Pay's swap, at 05:28:00 UTC and executed (the last row above). What this proves: the whole path
-  from Kuza to a paid swap on the Nimiq side. What it doesn't: we did not see the Lightning payment arrive at the
-  recipient ourselves.
+  into an HTLC (`NQ89 V0MN CVGT 3RC9 B7PA F1YJ L564 TEMK A0TM`) at 05:28:00 UTC, and 6 seconds later the HTLC was
+  redeemed with the preimage `b2009745667f73947cac22d83aaea32b161266cfbfc27b4fc6b6944def43b3cf` (in the redeem
+  transaction's proof). A Lightning preimage is only released once the invoice is paid, so the payment went through end
+  to end. Anyone can check it: sha256 of the preimage is `ec640c4dc20e72d76582035cf780c7d6d645dce995617efbb9d91b38c5bbf5a6`,
+  which is both the HTLC's hash root (in the first transaction) and the 30-sat invoice's payment hash.
 - **Found and fixed the same day:** a garbled paste now fails Kuza's own check (the invoice checksum) instead of
   reaching Nimiq Pay; "Use the money" no longer calls savings set aside in the wallet "in your own stake"; and a
   payment now comes off what the goal holds, so the goal no longer shows the 70 NIM as still set aside.
 
 Not tested yet on a real phone: an iPhone; the invite page's button on a phone without Nimiq Pay installed (the Play
-Store fallback); monthly plans and moving a goal on (these run in the demo and the tests). And rewards. Earned still shows +0 because no reward has reached the stake yet: the pool adds
-rewards to a stake only once they reach 1 NIM, and at 1,100 NIM that takes about six and a half days. The pool's own
-figures showed 0.495 NIM built up on 4 November, so the first reward is due around 8 November. All wallets above are
-our own test wallets; we know of no outside user yet.
+Store fallback); monthly plans and moving a goal on (these run in the demo and the tests). Rewards: the pool's first
+payout reached the stake on 7 November. Kuza's Earned, proven from the chain (stake minus deposits plus withdrawals), is
+1.00054 NIM, and the live site shows +1 NIM for the wallet; it has not been photographed on the phone yet. All wallets
+above are our own test wallets; we know of no outside user yet.
 
 ## Who has used it
 
