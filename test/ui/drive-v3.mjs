@@ -149,6 +149,7 @@ async function main() {
     check('goal: asks to invite friends before any gift', true);
     await t.click('[data-rig=share]');
     await t.waitFor('[data-rig=share-preview]');
+    check('share: "Your friends see" shows the gifts so far (none yet), as the friend page does, not the saver\'s stake', await t.eval(`/(^|\\n)0 of [\\d,]+ NIM so far/.test(document.querySelector('[data-rig=share-preview]').innerText)`));
     await capture(t);
     await t.click('[data-rig=share-copy-msg]');
     await sleep(300);

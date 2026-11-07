@@ -1320,12 +1320,13 @@ function sheetShare(goal) {
     ? h('button', { class: 'btn primary wide', 'data-rig': 'share-native', onclick: () => navigator.share({ title: goal.name, text: t('share.msgShort', { name: goal.name }), url: link }).then(shared, () => {}) }, icon('share', 18), t('share.system'))
     : h('button', { class: 'btn primary wide', 'data-rig': 'share-copy-msg', onclick: () => copy(message, t('share.copiedMsg')) }, icon('share', 18), t('share.copyMsg'));
   openSheet(t('share.title'), h('div', { class: 'form' },
+    // "Your friends see": exactly what the friend's page shows, the gifts so far, never the saver's own stake.
     h('div', { class: 'invite-card', 'data-rig': 'share-preview', 'aria-label': t('share.previewLabel') },
-      hexRing(prog.ratio, 58, h('div', { class: 'gi' }, icon('gift', 20)), { width: 8 }),
+      hexRing(goal.target ? Math.min(1, (prog.gifts || 0) / goal.target) : 0, 58, h('div', { class: 'gi' }, icon('gift', 20)), { width: 8 }),
       h('div', { class: 'grow' },
         h('div', { class: 'tiny mute' }, t('share.previewKicker')),
         h('b', {}, goal.name),
-        h('div', { class: 'tiny mute' }, t('goal.of', { saved: fmtNim(prog.saved, lang()), target: nim(goal.target) })))),
+        h('div', { class: 'tiny mute' }, t('jar.progress', { amount: fmtNim(prog.gifts || 0, lang(), 0), target: nim(goal.target, 0) })))),
     h('p', { class: 'small' }, t('share.body')),
     main,
     h('div', { class: 'actions' },
