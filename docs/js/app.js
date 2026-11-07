@@ -105,6 +105,10 @@ function dateText(date) {
   return date ? day(Date.parse(date + 'T12:00:00Z')) : '';
 }
 
+/** A plan moment for display. The last period before a goal's date ends with that date, shown as the date itself
+ * (as "By ..." shows it), never as the next day where the phone's clock is ahead of UTC. */
+const planDay = (goal, ms) => (goal.date && ms === Date.parse(`${goal.date}T23:59:59Z`) ? Date.parse(`${goal.date}T12:00:00Z`) : ms);
+
 function hours(blocks) {
   const hrs = S.blocksToMs(blocks) / HOUR;
   if (hrs < 1) return t('time.minutes', { n: Math.max(1, Math.round(hrs * 60)) });
@@ -515,7 +519,11 @@ async function sameAccount() {
   return false;
 }
 
-async function startCooling(goal, amount) {
+/**
+ * Start the cooling-off. With `takeOut` (from "Take some out"), the NIM is taken off the goal when it lands in the wallet,
+ * and `walletOut`, the part the goal already held in the wallet, comes off as soon as the transaction is approved.
+ */
+async function startCooling(goal, amount, { takeOut = false, walletOut = 0 } = {}) {
   const provider = W.getProvider();
   try {
     if (!(await sameAccount()) || !(await walletReady())) return;
@@ -525,8 +533,10 @@ async function startCooling(goal, amount) {
     const rest = staker.active + staker.inactive - amount;
     const newActive = rest < S.MIN_STAKE ? 0 : rest;
     const hash = await provider.sendSetActiveStakeTransaction({ newActiveBalance: newActive });
-    st.unstake = { goal: goal?.id || null, amount, at: Date.now() };
+    st.unstake = { goal: goal?.id || null, amount, at: Date.now(), ...(takeOut && goal ? { takeOut: amount } : {}) };
     st.op = { kind: 'cool', hash, at: Date.now() };
+    const now = takeOut && goal && walletOut > 0 ? G.takeOutEntry(goal, walletOut, Date.now()) : null;
+    if (now) goal.entries.push(now);
     saveState();
     closeSheet(true);
     render();
@@ -571,7 +581,7 @@ async function remove(amount) {
   const provider = W.getProvider();
   const hash = await provider.sendRemoveStakeTransaction({ value: amount });
   st.op = { kind: 'remove', hash, at: Date.now() };
-  st.unstake = { goal: st.unstake?.goal ?? null, amount: st.unstake?.amount ?? amount, at: st.unstake?.at ?? Date.now(), removing: amount };
+  st.unstake = { ...(st.unstake || {}), goal: st.unstake?.goal ?? null, amount: st.unstake?.amount ?? amount, at: st.unstake?.at ?? Date.now(), removing: amount };
   saveState();
   render();
   const tx = await C.waitForTx(hash);
@@ -636,6 +646,9 @@ function finishWithdrawIfDone() {
     if (entry) {
       goal.entries.push(entry);
       rest -= entry.luna;
+      // Taken out on purpose ("Take some out"): it's the owner's again, off the goal, as soon as it is in the wallet.
+      const off = u.takeOut > 0 ? G.takeOutEntry(goal, Math.min(u.takeOut, entry.luna + (entry.earned || 0)), Date.now()) : null;
+      if (off) goal.entries.push(off);
     }
   }
   // Anything beyond the goal's own deposits came from rewards first, then from stake older than Kuza.
@@ -697,7 +710,7 @@ function dueCards() {
       h('div', { class: 'notice-i' }, icon('flame')),
       h('div', {},
         h('b', {}, t('due.title', { name: goal.name })),
-        h('div', { class: 'small mute' }, t('due.body', { amount: nim(Math.min(due.left, prog.left)), date: day(due.endsAt) })))));
+        h('div', { class: 'small mute' }, t('due.body', { amount: nim(Math.min(due.left, prog.left)), date: day(planDay(goal, due.endsAt)) })))));
   }
   return out.slice(0, 2);
 }
@@ -738,10 +751,16 @@ function walletCard() {
     h('span', { class: 'notice-go' }, icon('next', 18)));
 }
 
+/** Where a goal stands against its pace, in words: the same helper for the home card and the goal page. */
+function paceWord(status) {
+  if (status.ahead) return t('plan.ahead', { amount: nim(status.delta, 0) });
+  return status.ok ? t('goal.onTrack') : t('goal.behind', { amount: nim(-status.delta, 0) });
+}
+
 function goalCard(goal) {
   const prog = goalProgress(goal);
   const run = G.streak(goal, Date.now());
-  const track = G.onTrack(goal, prog.saved, Date.now());
+  const track = G.pace(goal, prog.saved, Date.now()).status;
   const pending = goal.entries.some((e) => e.status === 'pending');
   const next = prog.ratio < 1 ? G.nextSave(goal, Date.now()) : null;
   return h('button', { class: 'card goal', 'data-rig': `goal-${goal.id}`, onclick: () => { location.hash = `#/goal/${goal.id}`; } },
@@ -751,11 +770,11 @@ function goalCard(goal) {
       h('div', { class: 'small' }, t('goal.of', { saved: fmtNim(prog.saved, lang()), target: nim(goal.target) })),
       next ? h('div', { class: 'tiny mute', 'data-rig': 'next-line' }, next.done
         ? t(`plan.doneShort.${per(goal)}`)
-        : t('plan.nextShort', { amount: nim(next.amount, 0), date: shortDay(next.by) })) : null,
+        : t('plan.nextShort', { amount: nim(next.amount, 0), date: shortDay(planDay(goal, next.by)) })) : null,
       h('div', { class: 'chips' },
         pending ? h('span', { class: 'chip wait' }, t('goal.confirming')) : null,
         prog.ratio >= 1 ? h('span', { class: 'chip good' }, t('goal.reached')) : null,
-        track && prog.ratio < 1 ? h('span', { class: `chip ${track.ok ? 'good' : 'warn'}` }, track.ok ? t('goal.onTrack') : t('goal.behind', { amount: nim(-track.delta, 0) })) : null,
+        track && prog.ratio < 1 ? h('span', { class: `chip ${track.ok ? 'good' : 'warn'}`, 'data-rig': 'pace-chip' }, paceWord(track)) : null,
         run > 0 ? h('span', { class: 'chip fire' }, icon('flame', 13), tn('goal.streak', run)) : null)));
 }
 
@@ -873,7 +892,9 @@ function viewGoal(goal) {
       h('div', {}, h('b', {}, t('goal.moveTitle', { amount: nim(prog.wallet) })), h('div', { class: 'small mute' }, t('goal.moveBody')))) : null,
     done ? null : h('div', { class: 'actions' },
       h('button', { class: 'btn primary', 'data-rig': 'save', onclick: () => sheetSave(goal) }, icon('plus', 18), t('goal.save')),
-      h('button', { class: 'btn', 'data-rig': 'share', onclick: () => sheetShare(goal) }, icon('share', 18), t('goal.share'))),
+      h('button', { class: 'btn', 'data-rig': 'share', onclick: () => sheetShare(goal) }, icon('share', 18), t('goal.share')),
+      // Taking part of it back never needs "Delete" or "Break": the goal stays, with the rest.
+      prog.wallet > 0 || prog.stake > 0 ? h('button', { class: 'link take-out', 'data-rig': 'take-out', onclick: () => sheetTakeOut(goal) }, t('goal.takeSome')) : null),
     !done && !R.fresh && st.address ? h('p', { class: 'tiny mute center', 'data-rig': 'connect-note' }, t('goal.connectNote')) : null,
     !done && !reached ? inviteNudge(goal, prog) : null,
     !done ? planCard(goal, prog, now) : null,
@@ -948,20 +969,21 @@ function planCard(goal, prog, now) {
   const run = G.streak(goal, now);
   const reached = prog.ratio >= 1;
   const next = reached ? null : G.nextSave(goal, now);
-  const status = reached ? null : G.planStatus(goal, prog.saved, now);
-  const finish = reached ? null : G.projectFinish(goal, prog.left, now);
-  const dateEnd = goal.date ? Date.parse(`${goal.date}T23:59:59Z`) : null;
-  const late = finish && dateEnd && finish.at > dateEnd;
-  const fix = late ? G.suggestPlan(goal.target, goal.date, now, goal.every, prog.saved) : null;
+  // One calculation for the badge, the pace line and the suggestion (and the home card), so they always agree.
+  const pc = reached ? null : G.pace(goal, prog.saved, now);
+  const status = pc?.status ?? null;
+  const finish = pc?.finish ?? null;
+  const late = Boolean(pc?.late);
+  const fix = late ? pc.suggest : null;
   const strip = G.weekStrip(goal, now, 8);
   const rows = [];
   if (next) {
     rows.push(h('div', { class: 'plan-row', 'data-rig': 'plan-next' },
       h('span', { class: 'plan-k' }, t('plan.next')),
-      h('b', {}, next.done ? t(`plan.nextDone.${p}`, { amount: nim(next.amount, 0), date: shortDay(next.from) }) : t('plan.nextDue', { amount: nim(next.amount, 0), date: shortDay(next.by) }))));
+      h('b', {}, next.done ? t(`plan.nextDone.${p}`, { amount: nim(next.amount, 0), date: shortDay(next.from) }) : t('plan.nextDue', { amount: nim(next.amount, 0), date: shortDay(planDay(goal, next.by)) }))));
   }
   if (status) {
-    const word = status.ok ? (status.delta > goal.weekly / 4 ? t('plan.ahead', { amount: nim(status.delta, 0) }) : t('goal.onTrack')) : t('goal.behind', { amount: nim(-status.delta, 0) });
+    const word = paceWord(status);
     rows.push(h('div', { class: 'plan-row', 'data-rig': 'plan-status' },
       h('span', { class: 'plan-k' }, status.by === 'date' ? t('plan.byDate') : t('plan.byPlan')),
       h('span', { class: `chip ${status.ok ? 'good' : 'warn'}` }, word)));
@@ -969,7 +991,7 @@ function planCard(goal, prog, now) {
   if (finish) {
     rows.push(h('div', { class: 'plan-row', 'data-rig': 'plan-finish' },
       h('span', { class: 'plan-k' }, t('plan.pace')),
-      h('b', {}, day(finish.at))));
+      h('b', { 'data-rig': 'plan-finish-day' }, day(planDay(goal, finish.at)))));
   }
   return h('section', { class: 'card plan', 'data-rig': 'plan-card' },
     h('div', { class: 'row-between' },
@@ -1000,6 +1022,7 @@ function entryRow(e) {
     assign: e.ref ? t('entry.movedIn', { name: e.ref }) : t('entry.assign'), withdraw: t('entry.withdraw'),
     move: t('entry.movedOut', { name: e.ref || '' }),
     spend: e.sats ? t('entry.spendSats', { sats: fmtSats(e.sats) }) : t('entry.spend'),
+    out: t('entry.out'),
   }[e.kind] || e.kind;
   if (e.kind === 'spend') {
     return h('div', { class: 'entry spend' },
@@ -1008,7 +1031,7 @@ function entryRow(e) {
       h('div', { class: 'entry-v' }, e.luna ? `−${nim(e.luna)}` : '',
         e.hash ? proof(e.hash) : null));
   }
-  const sign = e.kind === 'withdraw' || e.kind === 'move' ? '−' : '+';
+  const sign = e.kind === 'withdraw' || e.kind === 'move' || e.kind === 'out' ? '−' : '+';
   const status = e.status === 'pending' ? t('entry.pending') : e.status === 'failed' ? t('entry.failed') : '';
   return h('div', { class: `entry ${e.status}` },
     h('div', {},
@@ -1063,7 +1086,10 @@ function sheetGoal(goal = null, presetName = '', { from = null } = {}) {
   const update = () => {
     const luna = toLuna(target.value);
     const f = luna ? fiat(luna) : '';
-    const sug = luna && date.value ? G.suggestPlan(luna, date.value, now, every, already + (move?.checked ? carry : 0)) : { amount: 0, periods: 0 };
+    // An existing goal is asked about itself (its start, its savings so far), the same way its plan card asks.
+    const sug = !luna || !date.value ? { amount: 0, periods: 0 }
+      : goal ? G.pace({ ...goal, target: luna, date: date.value, every }, already, now).suggest
+        : G.suggestPlan(luna, date.value, now, every, move?.checked ? carry : 0);
     if (sug.amount && !touched) weekly.value = String(Math.ceil(sug.amount / LUNA));
     hint.textContent = [f ? `≈ ${f}` : '', sug.amount ? t(`form.suggest.${every}`, { amount: nim(sug.amount, 0), n: sug.periods }) : ''].filter(Boolean).join(' · ');
     seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.every === every)));
@@ -1521,7 +1547,85 @@ function sheetPayInvoice(goal) {
   check();
 }
 
-function sheetWithdraw(goal) {
+/**
+ * Take part of a goal's NIM back without deleting or breaking the goal. What it holds in the wallet is free at once
+ * (Kuza stops counting it; no transaction). Staked NIM goes through the real withdraw: stop earning, the cooling-off,
+ * back to the wallet. It's taken off the goal when it lands, never before.
+ */
+function sheetTakeOut(goal) {
+  const prog = goalProgress(goal);
+  const height = R.height ?? 0;
+  const startRelease = height ? S.releaseIfStartedAt(height, R.network) : 0;
+  const stage = R.staker ? S.withdrawStage(R.staker, height, R.jail) : null;
+  const busy = Boolean(st.unstake) || hasPending() || ['cooling', 'retire', 'remove'].includes(stage?.stage);
+  const inStake = prog.stake + prog.earned;
+  const stakeFree = R.staker && !busy ? Math.min(inStake, R.staker.active ?? 0) : 0;
+  const amount = h('input', { type: 'text', inputmode: 'decimal', value: '', placeholder: '0', autocomplete: 'off', 'data-rig': 'to-amount' });
+  const msg = h('div', { 'data-rig': 'to-msg' });
+  const btn = h('button', { class: 'btn primary wide', 'data-rig': 'to-go', disabled: true }, t('out.go', { amount: '' }).trim());
+  const row = (k, v, rig) => h('div', { class: 'plan-row', 'data-rig': rig }, h('span', { class: 'plan-k' }, k), h('b', {}, v));
+  const step = (n, title, body) => h('li', { class: 'step' }, h('span', { class: 'step-n' }, n), h('div', {}, h('b', {}, title), h('div', { class: 'tiny mute' }, body)));
+  const eta = startRelease ? t('wd.s2est', { time: hours(startRelease - height), date: when(Date.now() + S.blocksToMs(startRelease - height)) }) : t('wd.s2any');
+  let plan = null;
+  const check = () => {
+    const typed = amount.value.trim() ? toLuna(amount.value) : 0;
+    const kids = [];
+    plan = null;
+    if (typed === null) kids.push(h('p', { class: 'tiny bad' }, amountError(amount.value, t('form.errAmount'))));
+    else if (typed > 0) {
+      const p = G.takeOutPlan(goal, typed, inStake);
+      if (p.now + p.fromStake < typed) {
+        kids.push(h('p', { class: 'tiny bad' }, t('out.tooMuch', { amount: nim(prog.wallet + inStake) })));
+      } else if (!p.fromStake) {
+        kids.push(h('p', { class: 'small' }, t('out.walletOnly', { amount: nim(p.now) })));
+        plan = p;
+      } else if (busy) {
+        kids.push(h('p', { class: 'tiny warn' }, t('out.busy', { amount: nim(prog.wallet) })));
+      } else if (!R.staker || p.fromStake > stakeFree) {
+        kids.push(h('p', { class: 'tiny warn' }, R.staker ? t('wd.tooMuch', { amount: nim(stakeFree) }) : t('out.noRead')));
+      } else {
+        kids.push(h('p', { class: 'small' }, p.now ? t('out.mixed', { wallet: nim(p.now), stake: nim(p.fromStake) }) : t('out.stakedOnly')));
+        kids.push(h('ol', { class: 'steps' }, step(1, t('wd.s1'), t('wd.s1b')), step(2, t('wd.s2'), eta), step(3, t('wd.s3'), t('wd.s3b'))));
+        kids.push(h('p', { class: 'tiny mute' }, t('out.landNote', { name: goal.name })));
+        plan = p;
+      }
+    }
+    msg.replaceChildren(...kids);
+    btn.disabled = !plan;
+    btn.textContent = plan?.fromStake ? t('out.next') : t('out.go', { amount: plan ? nim(plan.now) : '' }).trim();
+  };
+  amount.addEventListener('input', check);
+  btn.addEventListener('click', () => {
+    check();
+    if (!plan) return;
+    if (plan.fromStake) {
+      sheetWithdraw(goal, { takeOut: true, amount: plan.fromStake, walletOut: plan.now });
+      return;
+    }
+    const entry = G.takeOutEntry(goal, plan.now, Date.now());
+    if (!entry) return;
+    goal.entries.push(entry);
+    // Below 100% again: reaching it later can be celebrated again, as after raising the target.
+    if (goalProgress(goal).ratio < 1 && Array.isArray(goal.marks)) goal.marks = goal.marks.filter((m) => m < 100);
+    saveState();
+    closeSheet(true);
+    toast(t('out.done', { amount: nim(entry.luna), name: goal.name }), 'good', 5000);
+    render();
+  });
+  openSheet(t('out.title', { name: goal.name }), h('div', { class: 'form', 'data-rig': 'takeout-sheet' },
+    h('p', { class: 'small' }, t('out.intro')),
+    h('div', { class: 'card flat' },
+      row(t('out.ready'), nim(prog.wallet), 'to-ready'),
+      row(t('out.staked'), nim(inStake), 'to-staked')),
+    field(t('out.amount'), amount),
+    msg,
+    btn,
+    h('button', { class: 'btn wide', 'data-rig': 'to-keep', onclick: () => closeSheet() }, t('wd.keep'))));
+  check();
+  amount.focus();
+}
+
+function sheetWithdraw(goal, { takeOut = false, amount: want = 0, walletOut = 0 } = {}) {
   const staker = R.staker;
   const height = R.height ?? 0;
   const stage = S.withdrawStage(staker, height, R.jail);
@@ -1567,7 +1671,7 @@ function sheetWithdraw(goal) {
   }
 
   const prog = goal ? goalProgress(goal) : null;
-  const suggested = Math.min(staker.active, prog ? prog.stake + prog.earned : staker.active);
+  const suggested = Math.min(staker.active, takeOut && want > 0 ? want : prog ? prog.stake + prog.earned : staker.active);
   const amount = h('input', { type: 'text', inputmode: 'decimal', value: plainNim(suggested), autocomplete: 'off', 'data-rig': 'w-amount' });
   const msg = h('div', {});
   const btn = h('button', { class: 'btn danger wide', 'data-rig': 'w-submit' }, t('wd.start'));
@@ -1594,12 +1698,14 @@ function sheetWithdraw(goal) {
     const luna = check();
     if (luna) {
       btn.disabled = true;
-      startCooling(goal, luna).finally(() => { if (sheetOpen()) check(); });
+      startCooling(goal, luna, { takeOut, walletOut }).finally(() => { if (sheetOpen()) check(); });
     }
   });
   const eta = startRelease ? Date.now() + S.blocksToMs(startRelease - height) : 0;
-  openSheet(goal && goalProgress(goal).ratio < 1 ? t('wd.breakTitle', { name: goal.name }) : t('wd.title'), h('div', { class: 'form' },
-    goal && goalProgress(goal).ratio < 1 ? h('p', { class: 'small' }, t('wd.breakNote', { left: nim(goalProgress(goal).left) })) : null,
+  const breaking = goal && !takeOut && goalProgress(goal).ratio < 1;
+  openSheet(takeOut && goal ? t('out.title', { name: goal.name }) : breaking ? t('wd.breakTitle', { name: goal.name }) : t('wd.title'), h('div', { class: 'form', 'data-rig': takeOut ? 'wd-takeout' : 'wd-sheet' },
+    breaking ? h('p', { class: 'small' }, t('wd.breakNote', { left: nim(goalProgress(goal).left) })) : null,
+    takeOut && goal ? h('p', { class: 'small', 'data-rig': 'wd-takeout-note' }, walletOut > 0 ? `${t('out.wdWallet', { amount: nim(walletOut) })} ` : '', t('out.landNote', { name: goal.name })) : null,
     h('p', { class: 'small' }, t('wd.free')),
     field(t('wd.amount'), amount),
     msg,

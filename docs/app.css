@@ -144,6 +144,7 @@ main { display: flex; flex-direction: column; gap: 12px; }
 .tile-v { font-weight: 700; font-size: 15.5px; }
 .tile-v.good { color: var(--green); }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions .take-out { grid-column: 1; justify-self: center; margin-top: -4px; padding: 6px 8px; min-height: 36px; }
 
 .weeks { display: flex; gap: 6px; margin: 10px 0 6px; }
 .wk { flex: 1; height: 10px; border-radius: 4px; background: #ece9df; }
