@@ -113,7 +113,7 @@ test('next save, projection and plan status', () => {
   assert.deepEqual(p, { at: start + 10 * WEEK, periods: 9 });
   // Two weeks later, nothing more saved: 100 behind the plan for the one week that ended without a saving.
   const st = G.planStatus(g, 100 * NIM, start + 2 * WEEK + DAY);
-  assert.deepEqual(st, { expected: 200 * NIM, delta: -100 * NIM, ok: false, by: 'plan' });
+  assert.deepEqual(st, { expected: 200 * NIM, delta: -100 * NIM, ok: false, ahead: false, by: 'plan' });
   // With a date the straight line to the date decides.
   g.date = '2027-01-11';
   assert.equal(G.planStatus(g, 100 * NIM, start + 2 * WEEK + DAY).by, 'date');
@@ -123,7 +123,7 @@ test('next save, projection and plan status', () => {
   assert.equal(G.nextSave({ ...g, weekly: 0 }, start), null);
   // Monthly suggestion.
   assert.deepEqual(G.suggestPlan(1200 * NIM, '2027-11-01', Date.UTC(2026, 10, 1), 'month'), { amount: 100 * NIM, periods: 12 });
-  assert.deepEqual(G.suggestPlan(1200 * NIM, '2027-11-02', Date.UTC(2026, 10, 1), 'month'), { amount: Math.ceil(1200 * NIM / 13), periods: 13 });
+  assert.deepEqual(G.suggestPlan(1200 * NIM, '2027-11-02', Date.UTC(2026, 10, 1), 'month'), { amount: 93 * NIM, periods: 13 }); // 92.3 rounded up to whole NIM, the number the form shows
   assert.deepEqual(G.suggestPlan(1200 * NIM, null, Date.UTC(2026, 10, 1), 'month'), { amount: 0, periods: 0 });
   assert.equal(G.suggestPlan(700 * NIM, '2026-11-14', Date.UTC(2026, 10, 1), 'week').periods, 2); // 13 days and a bit: 2 weeks
 });

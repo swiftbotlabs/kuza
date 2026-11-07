@@ -217,11 +217,13 @@ test('moving wallet money into stake is not counted as new saving', () => {
   assert.equal(G.weekStrip(g, NOW + 3000, 1)[0].amount, 60 * NIM);
 });
 
-test('suggestWeekly and onTrack', () => {
-  assert.equal(G.weeksUntil('2026-11-08', NOW), 2);
-  assert.equal(G.weeksUntil('2020-01-01', NOW), 0);
-  assert.equal(G.suggestWeekly(70 * NIM, '2026-11-08', NOW), 35 * NIM);
-  assert.equal(G.suggestWeekly(70 * NIM, null, NOW), 0);
+test('suggested plan and onTrack', () => {
+  // NOW is 1 Nov 12:00. A week runs to 8 Nov 12:00, so 8 Nov is one week away (the week runs to the end of the 8th)
+  // and 9 Nov two: the second week starts on the 8th, before the 9th begins.
+  assert.deepEqual(G.suggestPlan(70 * NIM, '2026-11-08', NOW), { amount: 70 * NIM, periods: 1 });
+  assert.deepEqual(G.suggestPlan(70 * NIM, '2026-11-09', NOW), { amount: 35 * NIM, periods: 2 });
+  assert.deepEqual(G.suggestPlan(70 * NIM, '2020-01-01', NOW), { amount: 0, periods: 0 });
+  assert.deepEqual(G.suggestPlan(70 * NIM, null, NOW), { amount: 0, periods: 0 });
   const g = goal();
   const end = Date.parse('2026-12-31T23:59:59Z');
   const t = G.onTrack(g, 500 * NIM, (NOW + end) / 2);

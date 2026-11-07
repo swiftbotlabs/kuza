@@ -10,15 +10,19 @@
 //             goal's share of rewards that came out with it. Older entries (no toWallet) meant the NIM left the goal.
 //   move      stake handed on to another goal (that goal books it as assign), no transaction
 //   spend     a payment made from what the goal held in the wallet, never more than that (`paid` is the whole payment)
+//   out       taken back by the owner for their own use (since 8 Nov 2026): the goal stops counting that much of what it
+//             held in the wallet. No transaction: the NIM is already in the wallet. Staked NIM comes out of the stake
+//             first (a real withdraw, with its cooling-off), and is taken off the goal when it lands.
 // status is pending, ok or failed. Only ok counts.
 //
 // A goal can have a plan: `weekly` Luna every `every` ('week' or 'month'). The field keeps its old name so goals saved
 // before monthly plans existed still read the same.
 
 const WEEK = 7 * 24 * 3600 * 1000;
+const LUNA = 100000;
 const NAME_MAX = 40;
 const MAX_GIFTS = 500;
-const KINDS = new Set(['aside', 'gift', 'stake', 'assign', 'withdraw', 'move', 'spend']);
+const KINDS = new Set(['aside', 'gift', 'stake', 'assign', 'withdraw', 'move', 'spend', 'out']);
 export const MARKS = [25, 50, 75, 100];
 const STATUSES = new Set(['ok', 'pending', 'failed']);
 
@@ -26,36 +30,13 @@ export function newGoal({ id, name, target, date, weekly, every, icon, now }) {
   return { id, name: String(name).slice(0, NAME_MAX), target, date: date || null, weekly: weekly || 0, every: every === 'month' ? 'month' : 'week', icon: icon || 'seed', createdAt: now, entries: [], closedAt: null, marks: [], reachedAt: null };
 }
 
-export function weeksUntil(date, now) {
-  if (!date) return 0;
-  const end = Date.parse(date + 'T23:59:59Z');
-  if (Number.isNaN(end) || end <= now) return 0;
-  return Math.max(1, Math.ceil((end - now) / WEEK));
-}
-
-export function suggestWeekly(target, date, now, already = 0) {
-  const weeks = weeksUntil(date, now);
-  if (!weeks) return 0;
-  return Math.ceil(Math.max(0, target - already) / weeks);
-}
-
-/** Whole months from now to the end of the date, at least 1; 0 without a date or once it has passed. */
-export function monthsUntil(date, now) {
-  if (!date) return 0;
-  const end = Date.parse(date + 'T23:59:59Z');
-  if (Number.isNaN(end) || end <= now) return 0;
-  const a = new Date(now);
-  const b = new Date(end);
-  let months = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
-  if (b.getUTCDate() > a.getUTCDate()) months++;
-  return Math.max(1, months);
-}
-
-/** What to put in each period to reach the target by the date. */
+/**
+ * What to put in each period to reach the target by the date, for a goal that starts now with `already` in it (the
+ * new-goal form). An existing goal's form asks pace() about the goal itself, so the plan and the suggestion agree.
+ */
 export function suggestPlan(target, date, now, every = 'week', already = 0) {
-  const periods = every === 'month' ? monthsUntil(date, now) : weeksUntil(date, now);
-  if (!periods) return { amount: 0, periods: 0 };
-  return { amount: Math.ceil(Math.max(0, target - already) / periods), periods };
+  const g = { target, date: date || null, every: every === 'month' ? 'month' : 'week', weekly: 0, createdAt: now, entries: [] };
+  return pace(g, already, now).suggest;
 }
 
 const counted = (goal) => goal.entries.filter((e) => e.status === 'ok');
@@ -82,7 +63,7 @@ export function parts(goal) {
         break;
       }
       case 'move': stake = Math.max(0, stake - e.luna); break;
-      case 'spend': wallet = Math.max(0, wallet - e.luna); break;
+      case 'spend': case 'out': wallet = Math.max(0, wallet - e.luna); break;
       default: break;
     }
   }
@@ -109,6 +90,22 @@ export function withdrawEntry(goal, out, share, now) {
 /** How much of a payment of `value` Luna is booked against the goal: never more than it holds in the wallet. */
 export function spendPart(goal, value) {
   return Math.min(parts(goal).wallet, Math.max(0, value || 0));
+}
+
+/**
+ * Taking some of a goal's NIM back. What it holds in the wallet comes first and is free at once (`now`); the rest has
+ * to come out of the stake first (`fromStake`, at most the goal's stake and its share of the rewards, `inStake`).
+ */
+export function takeOutPlan(goal, value, inStake) {
+  const want = Math.max(0, value || 0);
+  const now = Math.min(parts(goal).wallet, want);
+  return { now, fromStake: Math.min(Math.max(0, inStake || 0), want - now) };
+}
+
+/** The entry for NIM taken back from what the goal holds in the wallet: never more than that. Null when it's 0. */
+export function takeOutEntry(goal, value, now) {
+  const luna = Math.min(parts(goal).wallet, Math.max(0, value || 0));
+  return luna > 0 ? { kind: 'out', luna, at: now, status: 'ok' } : null;
 }
 
 /** Sum of what goals hold in stake, across all goals, closed or not. */
@@ -179,7 +176,8 @@ export const planWeek = planPeriod;
 
 /**
  * What each plan period added to the goal, net: new money in (set aside, gifts, new stake, stake moved in from another
- * goal) less what left it (spent, moved on, or taken out before 7 Nov 2026, when a withdrawal still left the goal).
+ * goal) less what left it (spent, moved on, taken back by the owner, or withdrawn before 7 Nov 2026, when a withdrawal
+ * still left the goal).
  * Moving the goal's own NIM between wallet and stake adds nothing. A period never reads below 0.
  */
 function savedByWeek(goal) {
@@ -189,7 +187,7 @@ function savedByWeek(goal) {
     switch (e.kind) {
       case 'aside': case 'gift': case 'assign': add(e, e.luna); break;
       case 'stake': add(e, e.luna - Math.min(e.luna, e.fromWallet || 0)); break;
-      case 'spend': case 'move': add(e, -e.luna); break;
+      case 'spend': case 'move': case 'out': add(e, -e.luna); break;
       case 'withdraw': if (!e.toWallet) add(e, -e.luna); break;
       default: break;
     }
@@ -212,53 +210,109 @@ export function streak(goal, now) {
   return count;
 }
 
-/** The weekly reminder: is this week's amount still open, and when does the week end? */
+/** The weekly reminder: is this period's amount still open, and when is it due? */
 export function dueNow(goal, now) {
   if (!goal.weekly || goal.closedAt) return null;
   const w = planPeriod(goal, now);
   const saved = savedByWeek(goal).get(w) || 0;
   const left = goal.weekly - saved;
   if (left <= 0) return null;
-  return { left, endsAt: periodStart(goal, w + 1) };
+  return { left, endsAt: periodEnd(goal, w) };
 }
 
 /**
- * The next saving the plan asks for: what's still open this period and when the period ends, or, once this period is
- * met, the full amount for the next one. Null without a plan.
+ * The next saving the plan asks for: what's still open this period and when it's due, or, once this period is met,
+ * the full amount for the next one. Null without a plan.
  */
 export function nextSave(goal, now) {
   if (!goal.weekly || goal.closedAt) return null;
   const due = dueNow(goal, now);
   if (due) return { amount: due.left, by: due.endsAt, done: false };
   const w = planPeriod(goal, now);
-  return { amount: goal.weekly, from: periodStart(goal, w + 1), by: periodStart(goal, w + 2), done: true };
+  return { amount: goal.weekly, from: periodStart(goal, w + 1), by: periodEnd(goal, w + 1), done: true };
+}
+
+/** Up to the next whole NIM: plan amounts are typed and shown in whole NIM, so they're worked out in whole NIM. */
+const wholeUp = (luna) => Math.ceil(luna / LUNA) * LUNA;
+
+/** The goal's date as [start of that day, end of that day] in UTC, or null. */
+function dateSpan(goal) {
+  if (!goal.date) return null;
+  const end = Date.parse(goal.date + 'T23:59:59Z');
+  return Number.isNaN(end) ? null : [end - (24 * 3600 - 1) * 1000, end];
 }
 
 /**
- * When the goal is reached if the plan is kept from now on: this period's open part, then one plan amount per period.
- * Rewards and gifts would only make it sooner, so they're left out. Null without a plan or once reached.
+ * How many plan periods the goal has to its date, counted from the day it was made: the periods that start before
+ * the date's day does. The last of them runs to the end of the date. 0 without a date or with one before the start.
  */
+export function periodsToDate(goal) {
+  const span = dateSpan(goal);
+  if (!span || span[1] <= goal.createdAt) return 0;
+  return span[0] > goal.createdAt ? Math.max(1, planPeriod(goal, span[0] - 1) + 1) : 1;
+}
+
+/** When plan period i is due: when the next one starts, except that the last period before the date ends on the date. */
+export function periodEnd(goal, i) {
+  const next = periodStart(goal, i + 1);
+  const total = periodsToDate(goal);
+  return total && i === total - 1 ? dateSpan(goal)[1] : next;
+}
+
+/**
+ * The plan math, in one place. The home card, the goal page's badge, its pace line and its "gets you there" line and
+ * the goal form all read this, so they can never disagree.
+ * - Periods (weeks or months) run from the moment the goal was made. A period's saving is due when the period ends,
+ *   so nothing is due during the first one: a goal made today is never behind, and `status` stays null until a
+ *   period has ended (nothing to compare yet).
+ * - With a date, the date sets the pace: the target split over the periods to the date (`periodsToDate`), in whole
+ *   NIM rounded up, owed for each period that has ended. Without a date, the plan amount does.
+ * - `suggest` is what each period from this one to the date needs: what's left of the target after everything saved
+ *   before this period, over the periods left including this one, in whole NIM rounded up. A new goal's form puts that
+ *   same number in the plan field, so a plan made from it is never "late".
+ * - `finish` is when the goal lands if the plan amount is kept from now on (gifts and rewards would only make it
+ *   sooner); `late` when that falls after the date.
+ * Amounts are compared in whole NIM: under half a NIM short is not "behind".
+ */
+export function pace(goal, saved, now) {
+  const total = periodsToDate(goal);
+  const span = dateSpan(goal);
+  const current = Math.max(0, planPeriod(goal, now));
+  const thisPeriod = savedByWeek(goal).get(current) || 0;
+  const left = Math.max(0, goal.target - saved);
+  const open = !total ? 0 : current < total ? total - current : now <= span[1] ? 1 : 0;
+  const before = Math.max(0, saved - thisPeriod);
+  const suggest = open ? { amount: wholeUp(Math.max(0, goal.target - before) / open), periods: open } : { amount: 0, periods: 0 };
+  const per = total ? wholeUp(goal.target / total) : goal.weekly;
+  const ended = total ? Math.min(current, total) : current;
+  let status = null;
+  if (per > 0 && ended >= 1) {
+    const expected = Math.min(goal.target, per * ended);
+    const delta = saved - expected;
+    const ok = Math.round(delta / LUNA) >= 0;
+    status = { expected, delta, ok, ahead: ok && delta > per / 4, by: total ? 'date' : 'plan' };
+  }
+  let finish = null;
+  if (goal.weekly > 0 && left > 0) {
+    const due = Math.max(0, goal.weekly - thisPeriod);
+    const rest = left - Math.min(due, left);
+    const more = rest > 0 ? Math.ceil(rest / goal.weekly) : 0;
+    const k = current + more; // the period the last saving falls in
+    finish = { at: periodEnd(goal, k), periods: more + (due > 0 ? 1 : 0), period: k };
+  }
+  const late = Boolean(finish && total && finish.period >= total);
+  return { periods: total, current, status, suggest, finish, late };
+}
+
+/** When the goal is reached if the plan is kept from now on (see pace). Null without a plan or once reached. */
 export function projectFinish(goal, left, now) {
-  if (!goal.weekly || !(left > 0)) return null;
-  const w = planPeriod(goal, now);
-  const due = dueNow(goal, now);
-  const rest = left - (due ? Math.min(due.left, left) : 0);
-  const more = rest > 0 ? Math.ceil(rest / goal.weekly) : 0;
-  return { at: periodStart(goal, w + 1 + more), periods: more + (due ? 1 : 0) };
+  const f = pace(goal, goal.target - left, now).finish;
+  return f ? { at: f.at, periods: f.periods } : null;
 }
 
-/**
- * On plan, ahead or behind. With a date it's the straight line from the start to the date; without one it's the plan
- * amount for every period that has ended. Null when there's nothing to compare yet.
- */
+/** On plan, ahead or behind (see pace). Null when there's nothing to compare yet. */
 export function planStatus(goal, saved, now) {
-  const line = onTrack(goal, saved, now);
-  if (line) return { ...line, by: 'date' };
-  if (!goal.weekly) return null;
-  const ended = planPeriod(goal, now);
-  if (ended < 1) return null;
-  const expected = goal.weekly * ended;
-  return { expected, delta: saved - expected, ok: saved >= expected, by: 'plan' };
+  return pace(goal, saved, now).status;
 }
 
 /** The highest 25/50/75/100% mark this goal has passed and not yet celebrated, or 0. Goals from before marks: 0. */
@@ -285,14 +339,10 @@ export function weekStrip(goal, now, n = 8) {
   return out;
 }
 
-/** Are we ahead of or behind a straight line from start to target date? */
+/** Ahead of or behind the pace to the date (see pace). Null without a date or before anything is due. */
 export function onTrack(goal, saved, now) {
-  if (!goal.date) return null;
-  const end = Date.parse(goal.date + 'T23:59:59Z');
-  if (Number.isNaN(end) || end <= goal.createdAt) return null;
-  const share = Math.min(1, Math.max(0, (now - goal.createdAt) / (end - goal.createdAt)));
-  const expected = Math.floor(goal.target * share);
-  return { expected, delta: saved - expected, ok: saved >= expected };
+  const st = pace(goal, saved, now).status;
+  return st && st.by === 'date' ? st : null;
 }
 
 /** Merge gifts read from the chain into the goals. Returns how many were new. */
@@ -346,6 +396,7 @@ export function sanitizeState(raw) {
   if (raw.unstake && typeof raw.unstake === 'object' && Number.isSafeInteger(raw.unstake.amount)) {
     out.unstake = { goal: typeof raw.unstake.goal === 'string' ? raw.unstake.goal : null, amount: raw.unstake.amount, at: Number(raw.unstake.at) || 0 };
     if (Number.isSafeInteger(raw.unstake.removing)) out.unstake.removing = raw.unstake.removing;
+    if (Number.isSafeInteger(raw.unstake.takeOut) && raw.unstake.takeOut > 0) out.unstake.takeOut = raw.unstake.takeOut;
   }
   out.noCount = raw.noCount === true;
   // Lightning invoices already handed to the wallet (SHA-256 only), so the same one is never paid twice from Kuza.
