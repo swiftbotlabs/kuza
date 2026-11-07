@@ -109,7 +109,7 @@ main { display: flex; flex-direction: column; gap: 12px; }
 .chip.good { background: var(--green-soft); color: #0a6e5f; }
 .chip.warn { background: var(--gold-soft); color: #8a5a00; }
 .chip.wait { background: #e6e9ff; color: #333a9e; }
-.chip.fire { background: #ffe9dc; color: #b84a12; }
+.chip.fire { background: #ffe9dc; color: #b84a12; white-space: nowrap; flex: none; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px; padding: 0 18px;

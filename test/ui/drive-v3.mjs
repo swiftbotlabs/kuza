@@ -86,6 +86,9 @@ async function main() {
     await t.waitFor('[data-rig=plan-card]');
     const plan = await t.eval(`document.querySelector('[data-rig=plan-card]').innerText`);
     check('plan card: monthly plan, next saving, pace, streak', plan.includes('Plan: 100 NIM a month') && plan.includes('Done this month') && plan.includes('At this pace') && plan.includes('1 month in a row'));
+    check('plan card: the streak chip stays on one line next to a long plan title', await t.eval(`(() => { const c = document.querySelector('[data-rig=streak]');
+      if (!c) return false; const title = c.parentElement.querySelector('b'); const keep = title.textContent; title.textContent = 'Plan: 1,429 NIM a month';
+      const ok = c.getClientRects().length === 1 && c.offsetHeight < 2 * parseFloat(getComputedStyle(c).fontSize) + 6; title.textContent = keep; return ok; })()`));
     check('plan strip: "Last 8 months" shows 8 marks, the 7 before the goal existed empty, this month gold', await t.eval(`(() => {
       const s = document.querySelectorAll('[data-rig=plan-strip] .wk'); const pre = document.querySelectorAll('[data-rig=plan-strip] .wk.pre');
       return s.length === 8 && pre.length === 7 && s[7].classList.contains('met') && s[7].classList.contains('now'); })()`));
