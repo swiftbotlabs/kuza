@@ -1,6 +1,6 @@
 // Invite links, deep links, monthly plans, milestones, rewards seen arriving, and the Lightning invoice check.
 import test from 'node:test';
-import { ln, withChecksum } from './fixtures/lightning.mjs';
+import { ln, withChecksum, damaged } from './fixtures/lightning.mjs';
 import assert from 'node:assert/strict';
 import * as J from '../docs/js/jar.js';
 import * as I from '../docs/js/invite.js';
@@ -225,7 +225,7 @@ test('Lightning invoices: the right network, an amount, an intact checksum, noth
   // A copy that went wrong on the way: one character changed, one dropped, one added, two swapped, the end cut off.
   const swap = (s, i) => s.slice(0, i) + s[i + 1] + s[i] + s.slice(i + 2);
   const flip = (s, i) => s.slice(0, i) + (s[i] === 'q' ? 'p' : 'q') + s.slice(i + 1);
-  for (const bad of [flip(main, 40), main.slice(0, 60) + main.slice(61), main.slice(0, 60) + 'q' + main.slice(60), swap(main, 70), main.slice(0, -3) + 'qqq',
+  for (const bad of [flip(main, 40), main.slice(0, 60) + main.slice(61), main.slice(0, 60) + 'q' + main.slice(60), swap(main, 70), damaged(main, 3),
     flip(lnurl, 30), flip(ln('lnbc'), 20)]) {
     assert.deepEqual(P.checkInvoice(bad), { ok: false, reason: 'damaged' }, bad.slice(0, 30));
   }
@@ -248,7 +248,7 @@ test('wallet errors: a Lightning invoice paid twice is its own case', () => {
 
 test('every reason the invoice check gives has words in the app', async () => {
   const { dictionaries } = await import('../docs/js/i18n.js');
-  const reasons = new Set(['', 'x', ln('lnbc'), ln('lntb5u'), 'q'.repeat(3000), ln('lnbc5u').slice(0, -1) + 'q'].map((x) => P.checkInvoice(x).reason));
+  const reasons = new Set(['', 'x', ln('lnbc'), ln('lntb5u'), 'q'.repeat(3000), damaged(ln('lnbc5u'))].map((x) => P.checkInvoice(x).reason));
   assert.equal(reasons.size, 6);
   for (const r of reasons) for (const d of Object.values(dictionaries)) assert.ok(d[`spend.err.${r}`], r);
 });

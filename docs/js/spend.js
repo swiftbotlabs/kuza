@@ -50,13 +50,41 @@ export function bolt11Sats(part) {
   return sats <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(sats) : null;
 }
 
+const SIG_WORDS = 104; // a BOLT11 signature: 65 bytes = 104 five-bit words, just before the checksum
+const EXPIRY_TAG = 6; // 'x'
+export const DEFAULT_EXPIRY = 3600; // seconds, when an invoice has no x field (BOLT11)
+
+/**
+ * When a BOLT11 invoice was made (Unix seconds, the 35 bits right after the separator) and how long it is good for
+ * (its x field, 3600 s when it has none). Null when the text is too short to say.
+ */
+export function bolt11Times(invoice) {
+  if (typeof invoice !== 'string') return null;
+  const s = invoice.toLowerCase();
+  const w = [...s.slice(s.lastIndexOf('1') + 1, -6)].map((c) => CHARSET.indexOf(c));
+  if (w.length < 7 || w.some((x) => x < 0)) return null;
+  const num = (list) => list.reduce((n, x) => n * 32 + x, 0);
+  const ts = num(w.slice(0, 7));
+  let expiry = DEFAULT_EXPIRY;
+  const end = w.length - SIG_WORDS;
+  for (let i = 7; i + 3 <= end;) {
+    const type = w[i];
+    const len = w[i + 1] * 32 + w[i + 2];
+    if (i + 3 + len > end) break; // a field running into the signature: stop reading, keep what is known
+    if (type === EXPIRY_TAG && len > 0) expiry = len > 7 ? Infinity : num(w.slice(i + 3, i + 3 + len));
+    i += 3 + len;
+  }
+  return { ts, expiry };
+}
+
 /**
  * Clean up what the user pasted and say whether it's worth handing to the wallet.
  * Returns { ok: true, invoice, kind: 'bolt11' | 'lnurl', sats } or { ok: false, reason }:
  *   empty, long, notLightning, damaged (the checksum fails: a character changed or went missing on the way), wrongNet
- *   (a test invoice on mainnet or the other way round), noAmount (Nimiq Pay only pays invoices that name an amount).
+ *   (a test invoice on mainnet or the other way round), noAmount (Nimiq Pay only pays invoices that name an amount),
+ *   expired (its time plus its expiry, 1 hour by default, has passed: the shop needs to make a new one).
  */
-export function checkInvoice(input, network = 'mainnet') {
+export function checkInvoice(input, network = 'mainnet', now = Date.now()) {
   if (typeof input !== 'string') return { ok: false, reason: 'empty' };
   const text = input.replace(/\s+/g, '').replace(/^lightning:/i, '').toLowerCase();
   if (!text) return { ok: false, reason: 'empty' };
@@ -70,5 +98,7 @@ export function checkInvoice(input, network = 'mainnet') {
   if (!m[2]) return { ok: false, reason: 'noAmount' };
   const sats = bolt11Sats(m[2]);
   if (sats === null || !(sats > 0)) return { ok: false, reason: 'notLightning' };
+  const times = bolt11Times(text);
+  if (!times || now / 1000 > times.ts + times.expiry) return { ok: false, reason: 'expired' };
   return { ok: true, invoice: text, kind: 'bolt11', sats };
 }
