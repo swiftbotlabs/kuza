@@ -392,6 +392,7 @@ async function main() {
     await a.eval(`document.querySelector('[data-rig=inv-new]').scrollIntoView()`);
     await a.shot(`${SHOTS}/v3-18-invite-android-steps.png`);
     check('android: no CSP violations', a.csp.length === 0);
+    await a.call('Page.bringToFront');
     await a.eval(`window.scrollTo(0, 0); document.querySelector('[data-rig=open-pay]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))`);
     await sleep(3200);
     check('android: link not taken (chat browser, no app) -> the help shows', (await a.eval(`!document.querySelector('[data-rig=inv-noapp]').hidden`)) && (await a.text()).includes('open it in your browser'));
@@ -402,9 +403,15 @@ async function main() {
     await i.waitFor('[data-rig=invite]');
     const ihref = await i.eval(`document.querySelector('[data-rig=open-pay]').getAttribute('href')`);
     check('iphone: button = nimiqpay:// link to this goal, App Store offered', ihref === `nimiqpay://miniapp?url=${encodeURIComponent(pubLink)}` && (await i.has('[data-rig=store-ios]')) && !(await i.has('[data-rig=store-android]')));
+    // Several tabs are open: bring this one to the front first, or the page counts as hidden and the help never starts.
+    await i.call('Page.bringToFront');
+    const hiddenBefore = await i.eval('document.hidden');
+    if (hiddenBefore) console.log('note: iPhone tab still hidden after bringToFront');
     await i.eval(`document.querySelector('[data-rig=open-pay]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))`);
-    await sleep(3200);
-    check('iphone: nothing opened -> the get-the-app help shows', await i.eval(`!document.querySelector('[data-rig=inv-noapp]').hidden`));
+    // The help appears ~2.5 s after the tap; poll for it (a fixed 3.2 s sleep flaked on a busy machine) but no longer than 6 s.
+    let shown = false;
+    for (let w = 0; w < 30 && !shown; w++) { await sleep(200); shown = await i.eval(`!document.querySelector('[data-rig=inv-noapp]').hidden`); }
+    check('iphone: nothing opened -> the get-the-app help shows', shown);
     await i.shot(`${SHOTS}/v3-19-invite-iphone-noapp.png`);
 
     const d = await tab({ width: 1280, height: 800, ua: DESKTOP });
