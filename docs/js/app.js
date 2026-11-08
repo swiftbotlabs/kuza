@@ -711,7 +711,7 @@ function dueCards() {
     out.push(h('button', { class: 'card notice gold', 'data-rig': `due-${goal.id}`, onclick: () => sheetSave(goal) },
       h('div', { class: 'notice-i' }, icon('flame')),
       h('div', {},
-        h('b', {}, t('due.title', { name: goal.name })),
+        h('b', {}, t(`due.title.${per(goal)}`, { name: goal.name })),
         h('div', { class: 'small mute' }, t('due.body', { amount: nim(Math.min(due.left, prog.left)), date: day(planDay(goal, due.endsAt)) })))));
   }
   return out.slice(0, 2);
@@ -777,7 +777,7 @@ function goalCard(goal) {
         pending ? h('span', { class: 'chip wait' }, t('goal.confirming')) : null,
         prog.ratio >= 1 ? h('span', { class: 'chip good' }, t('goal.reached')) : null,
         track && prog.ratio < 1 ? h('span', { class: `chip ${track.ok ? 'good' : 'warn'}`, 'data-rig': 'pace-chip' }, paceWord(track)) : null,
-        run > 0 ? h('span', { class: 'chip fire' }, icon('flame', 13), tn('goal.streak', run)) : null)));
+        run > 0 ? h('span', { class: 'chip fire' }, icon('flame', 13), tn(`goal.streak.${per(goal)}`, run)) : null)));
 }
 
 function footer() {
@@ -1260,7 +1260,7 @@ async function sheetSave(goal, { includeWallet = false, first = false, suggest =
   });
 
   const chips = [];
-  if (due?.left) chips.push([t('save.chipPlan'), due.left]);
+  if (due?.left) chips.push([t(`save.chipPlan.${per(goal)}`), due.left]);
   chips.push(['100', 100 * LUNA], ['1,000', 1000 * LUNA]);
   if (prog.left > 0) chips.push([t('save.chipRest'), prog.left]);
 

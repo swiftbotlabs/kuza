@@ -28,6 +28,8 @@ const demoUp = async (t) => {
 };
 const yes = async (t, title = 'Pretend wallet') => { await t.waitText(title, 8000); await t.click('[data-rig=demo-yes]'); };
 const poke = async (t, ms = 1800) => { await t.eval('document.dispatchEvent(new Event("visibilitychange"))'); await sleep(ms); };
+// The same day of the next month as `ms` (UTC), as the plan's month periods count it.
+const G_monthOn = (ms) => { const d = new Date(ms); const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 2, 0)).getUTCDate(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, Math.min(d.getUTCDate(), last), d.getUTCHours(), d.getUTCMinutes()); };
 const num = (s) => (String(s).match(/\d[\d,]*/) || [''])[0];
 // Test-only clock offset, read before the app's scripts run.
 const CLOCK = `(() => { try { const off = Number(localStorage.getItem('test.clock')) || 0; if (off) { const n = Date.now; Date.now = () => n() + off; } } catch {} })();`;
@@ -104,6 +106,39 @@ async function main() {
     check('edit form: suggests the same 500,000 a week for 20 weeks as the plan card', (await text(t, '[data-rig=f-hint]')).includes('500,000 NIM a week for 20 weeks'));
     await closeSheet(t);
     await setClock(t, 0);
+
+    // ---- A monthly plan: the home reminder speaks of this month (found on a real phone, 8 Nov) ----
+    await open(t, `${base}?demo=1&lang=en#/`, 1200);
+    await t.click('[data-rig=new-goal]');
+    await t.fill('[data-rig=f-name]', 'B.Sc fees');
+    await t.fill('[data-rig=f-target]', '1000');
+    await t.fill('[data-rig=f-weekly]', '100');
+    await t.click('[data-rig=f-every-month]');
+    await t.click('[data-rig=f-submit]');
+    await sleep(900);
+    if ((await t.text()).includes('Pretend wallet')) await t.click('[data-rig=demo-yes]');
+    await t.waitText('Make your first saving', 8000);
+    const chips = await t.eval(`[...document.querySelectorAll('.sheet .quick button')].map((b) => b.innerText.trim())`);
+    check('monthly plan, add sheet: the quick amount says "This month", not "This week"', chips.includes('This month') && !chips.includes('This week'));
+    await closeSheet(t);
+    const mg = (await state(t)).goals.find((g) => g.name === 'B.Sc fees');
+    await open(t, `${base}?demo=1&lang=en#/`, 1500);
+    const dueCard = await text(t, `[data-rig=due-${mg.id}]`);
+    const nextOn = (lang) => new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(G_monthOn(mg.createdAt)));
+    check('monthly plan, home reminder: "this month\'s saving", 100 NIM, due a month on (not "this week")', mg.every === 'month' && dueCard.includes("B.Sc fees: this month's saving") && !/week/i.test(dueCard)
+      && dueCard.includes('100 NIM') && dueCard.includes(nextOn('en')));
+    await t.shot(`${OUT}/p00-home-monthly-reminder.png`);
+    for (const [code, word] of [['es', 'el ahorro de este mes'], ['fr', "l'épargne du mois"], ['sw', 'akiba ya mwezi huu']]) {
+      await open(t, `${base}?demo=1&lang=${code}#/`, 1300);
+      check(`${code}: the monthly reminder says "${word}"`, (await text(t, `[data-rig=due-${mg.id}]`)).includes(word));
+    }
+    // This month's 100 set aside: the home card's streak chip counts months.
+    await t.eval(`(()=>{const k='kuza.demo.mainnet';const s=JSON.parse(localStorage.getItem(k));const g=s.goals.find((x)=>x.name==='B.Sc fees');g.entries.push({kind:'aside',luna:${100 * 1e5},at:Date.now(),status:'ok'});localStorage.setItem(k,JSON.stringify(s))})()`);
+    await open(t, `${base}?demo=1&lang=en#/`, 1500);
+    const chip = await text(t, `[data-rig=goal-${mg.id}] .chip.fire`);
+    check('monthly plan, home card: the streak chip says "1 month", not "1 week"', chip === '1 month');
+    await t.shot(`${OUT}/p00b-home-monthly-streak.png`);
+    await t.eval(`(()=>{const k='kuza.demo.mainnet';const s=JSON.parse(localStorage.getItem(k));s.goals=s.goals.filter((g)=>g.name!=='B.Sc fees');localStorage.setItem(k,JSON.stringify(s))})()`);
 
     // ---- 2. Take some out ----
     await open(t, `${base}?demo=1&lang=en#/`, 1200);

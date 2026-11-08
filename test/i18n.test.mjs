@@ -20,6 +20,9 @@ const TEMPLATE_VALUES = {
   'mark.': ['25', '50', '75'],
   'spend.err.': ['empty', 'long', 'notLightning', 'damaged', 'wrongNet', 'noAmount', 'expired'],
   'save.planned.': ['week', 'month'],
+  'due.title.': ['week', 'month'],
+  'save.chipPlan.': ['week', 'month'],
+  'goal.streak.': ['week', 'month'],
 };
 const templates = [];
 for (const m of src.matchAll(/\b(tn?)\(`([a-zA-Z0-9.]+)\$\{[^}]+\}([a-zA-Z0-9.]*)`/g)) templates.push({ plural: m[1] === 'tn', pre: m[2], post: m[3] });
@@ -31,7 +34,7 @@ for (const tp of templates) {
 }
 
 test('every key built at run time has its values listed', () => {
-  assert.ok(templates.length >= 9, `templates found: ${templates.length}`);
+  assert.ok(templates.length >= 12, `templates found: ${templates.length}`);
   for (const tp of templates) assert.ok(TEMPLATE_VALUES[tp.pre], `no values listed for ${tp.pre}`);
 });
 
@@ -71,7 +74,8 @@ test('language pick and plural', () => {
   assert.equal(pickLang('de'), 'en');
   assert.equal(pickLang(null), 'en');
   setLang('en');
-  assert.equal(tn('goal.streak', 1), '1 week');
-  assert.equal(tn('goal.streak', 3), '3 weeks');
+  assert.equal(tn('goal.streak.week', 1), '1 week');
+  assert.equal(tn('goal.streak.month', 2), '2 months');
+  assert.equal(tn('goal.streak.week', 3), '3 weeks');
   assert.equal(t('goal.of', { saved: '1', target: '2 NIM' }), '1 of 2 NIM');
 });

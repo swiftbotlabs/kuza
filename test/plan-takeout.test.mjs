@@ -150,3 +150,20 @@ test('T5: stored state keeps take-outs and a take-out in progress, and nothing e
   assert.equal(G.sanitizeState({ ...raw, unstake: { ...raw.unstake, takeOut: -1 } }).unstake.takeOut, undefined);
   assert.equal(G.sanitizeState({ ...raw, unstake: { ...raw.unstake, takeOut: '9' } }).unstake.takeOut, undefined);
 });
+
+test('M1: a monthly plan\'s reminder is this month\'s saving, due a month after the goal\'s day, in every language', async () => {
+  const { dictionaries } = await import('../docs/js/i18n.js');
+  const g = G.newGoal({ id: 'mmmmmm', name: 'B.Sc fees', target: 1000 * NIM, weekly: 100 * NIM, every: 'month', now: START });
+  const due = G.dueNow(g, START + DAY);
+  assert.equal(due.left, 100 * NIM);
+  assert.equal(due.endsAt, Date.UTC(2026, 11, 8, 14, 30)); // 8 Dec: one month, not one week
+  assert.equal(G.nextSave(g, START + DAY).by, due.endsAt); // the home reminder and the goal page agree
+  for (const [code, d] of Object.entries(dictionaries)) {
+    assert.ok(d['due.title.month'] && d['due.title.week'] && d['due.title.month'] !== d['due.title.week'], code);
+    assert.ok(!('due.title' in d), `${code}: the one-size wording is gone`);
+    assert.ok(d['save.chipPlan.month'] && d['save.chipPlan.month'] !== d['save.chipPlan.week'] && !('save.chipPlan' in d), code);
+    assert.ok(d['goal.streak.month_one'] && d['goal.streak.month_one'] !== d['goal.streak.week_one'] && !('goal.streak_one' in d), code);
+  }
+  assert.match(dictionaries.en['due.title.month'], /this month's saving/);
+  assert.doesNotMatch(dictionaries.en['due.title.month'], /week/);
+});
