@@ -109,10 +109,24 @@ On 7 November, on mainnet, on the second phone:
   reaching Nimiq Pay; "Use the money" no longer calls savings set aside in the wallet "in your own stake"; and a
   payment now comes off what the goal holds, so the goal no longer shows the 70 NIM as still set aside.
 
+Real phone, 8 Nov (POCO, Nimiq Pay mainnet, build 19314c0): a monthly-plan goal named 'B.Sc fees' was created; '1,000'
+showed the no-separators hint; home and goal page both showed the same next saving (100 NIM by Dec 8) with no false
+behind badge; the add sheet pre-filled the plan amount; Take some out moved 5 NIM out of a goal's set-aside part with
+the goal kept. The counter read 8 wallets connected.
+
+- **Found and fixed the same day:** on that monthly goal the home reminder said "this week's saving" and the add sheet's
+  quick amount said "This week". Both now follow the plan's period ("this month's saving", "This month"), as does the
+  streak on the home card, in all four languages.
+
+<p>
+  <img src="docs/img/shots/phone-takeout.png" width="240" alt="Take some out: 5 NIM from the set-aside part, no transaction">
+  <img src="docs/img/shots/phone-takeout-after.png" width="240" alt="After: 5 NIM is yours again, the goal keeps the rest">
+</p>
+
 An outside tester has opened Kuza inside Nimiq Pay on an iPhone and created a goal there; nothing has been staked from
-an iPhone yet. Not tested yet on a real phone: staking or taking NIM out on an iPhone; the invite page's button on a
-phone without Nimiq Pay installed (the Play Store fallback); monthly plans and moving a goal on (these run in the demo
-and the tests). Rewards: the pool's first payout reached the stake on 7 November. Kuza's Earned, proven from the
+an iPhone yet. Not tested yet on a real phone: staking on an iPhone; taking staked NIM out with Take some out (only
+the set-aside part has been taken out on a phone); the invite page's button on a phone without Nimiq Pay installed (the
+Play Store fallback); a monthly plan past its first month and moving a goal on (these run in the demo and the tests). Rewards: the pool's first payout reached the stake on 7 November. Kuza's Earned, proven from the
 chain (stake minus deposits plus withdrawals), is 1.00054 NIM, and the live site shows +1 NIM for the wallet; it has
 not been photographed on the phone yet. All wallets above are our own test wallets; apart from outside testers, we
 know of no outside user yet.
@@ -158,7 +172,8 @@ Still true, and known:
 - A short name whose ending is a real web domain ending is still refused, for example "B.Day" (.day is one), "M.Com",
   "B.Tech" or "Dr.Café" (read as cafe); only B.Sc, M.Sc and B.Com are allowed by name.
 - Withdrawals booked before 7 November keep their old meaning: that NIM left the goal.
-- These fixes ran in the demo and in the tests, not yet on a real phone.
+- These fixes ran in the demo and in the tests. On a real phone (8 Nov), the plan's numbers, the separators hint and
+  taking set-aside NIM out have run; the rest has not.
 
 ## Who has used it
 
