@@ -14,6 +14,7 @@ const TEMPLATE_VALUES = {
   'plan.doneShort.': ['week', 'month'],
   'plan.late.': ['week', 'month'],
   'plan.nextDone.': ['week', 'month'],
+  'plan.thisPeriod.': ['week', 'month'],
   'plan.stripNote.': ['week', 'month'],
   'plan.title.': ['week', 'month'],
   'plan.streak.': ['week', 'month'],

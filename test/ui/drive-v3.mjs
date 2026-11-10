@@ -86,7 +86,7 @@ async function main() {
     await t.waitText('Saved on-chain', 8000);
     await t.waitFor('[data-rig=plan-card]');
     const plan = await t.eval(`document.querySelector('[data-rig=plan-card]').innerText`);
-    check('plan card: monthly plan, next saving, pace, streak', plan.includes('Plan: 100 NIM a month') && plan.includes('Done this month') && plan.includes('At this pace') && plan.includes('1 month in a row'));
+    check('plan card: monthly plan, next saving, pace, streak', plan.includes('Plan: 100 NIM a month') && /This month\s+Done\. Next: 100 NIM from /.test(plan) && plan.includes('At this pace') && plan.includes('1 month in a row'));
     check('plan card: the streak chip stays on one line next to a long plan title', await t.eval(`(() => { const c = document.querySelector('[data-rig=streak]');
       if (!c) return false; const title = c.parentElement.querySelector('b'); const keep = title.textContent; title.textContent = 'Plan: 1,429 NIM a month';
       const ok = c.getClientRects().length === 1 && c.offsetHeight < 2 * parseFloat(getComputedStyle(c).fontSize) + 6; title.textContent = keep; return ok; })()`));
@@ -153,7 +153,8 @@ async function main() {
     check('goal: asks to invite friends before any gift', true);
     await t.click('[data-rig=share]');
     await t.waitFor('[data-rig=share-preview]');
-    check('share: "Your friends see" shows the gifts so far (none yet), as the friend page does, not the saver\'s stake', await t.eval(`/(^|\\n)0 of [\\d,]+ NIM so far/.test(document.querySelector('[data-rig=share-preview]').innerText)`));
+    // Labelled as what friends gave (outside test, 10 Nov: "0 of 5,000 so far" read as the goal's whole progress).
+    check('share: "Your friends see" shows the gifts so far (none yet), labelled from friends, as the friend page does, not the saver\'s stake', await t.eval(`/(^|\\n)0 NIM from friends so far · goal [\\d,]+ NIM/.test(document.querySelector('[data-rig=share-preview]').innerText)`));
     await capture(t);
     await t.click('[data-rig=share-copy-msg]');
     await sleep(300);
@@ -347,7 +348,7 @@ async function main() {
     await t.waitFor('[data-rig=thanks]', 10000);
     await sleep(1200);
     const thanks = await t.text();
-    check('thank-you: amount, progress, proof, start-your-own', thanks.includes('+100 NIM') && thanks.includes('of 400 NIM') && (await t.has('[data-rig=thanks-proof]')) && thanks.includes('Save for something of your own'));
+    check('thank-you: amount, progress, proof, start-your-own', thanks.includes('+100 NIM') && thanks.includes('from friends so far · goal 400 NIM') && (await t.has('[data-rig=thanks-proof]')) && thanks.includes('Save for something of your own'));
     await t.shot(`${SHOTS}/v3-15-thanks.png`);
     await capture(t);
     await t.click('[data-rig=thanks-pass]');
@@ -356,6 +357,12 @@ async function main() {
     check('thank-you: pass it on copies a message with the same goal', passed && passed.includes('chipped in') && passed.includes(link));
     await t.eval(`document.querySelector('[data-rig=thanks-own] .ideas a').click()`);
     await sleep(1200);
+    // In the demo the friend's own goal is the pretend owner's wallet: one Connect, then the form opens with the idea.
+    if (await t.has('[data-rig=connect]')) {
+      await t.click('[data-rig=connect]');
+      await t.waitText('Pretend wallet');
+      await t.click('[data-rig=demo-yes]');
+    }
     await t.waitFor('[data-rig=f-name]', 6000);
     check('thank-you: an idea opens the new goal form, filled in', (await t.eval(`document.querySelector('[data-rig=f-name]').value`)) === 'Emergency fund');
     await t.shot(`${SHOTS}/v3-16-friend-own-goal.png`);

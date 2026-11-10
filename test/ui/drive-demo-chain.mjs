@@ -1,6 +1,8 @@
 // The browser demo keeps its pretend chain across a reload: stake 10,000 of the pretend 25,000 NIM, reload, and the
 // wallet still has 15,000 while the stake is still 10,000, so the same 25,000 can't be staked twice. Settings > Reset
-// demo clears the chain and the demo's goals together; a damaged saved chain is ignored and the demo starts fresh.
+// demo clears the chain and the demo's goals together; a damaged saved chain is ignored and rebuilt from what the goals
+// booked (a fresh chain when they booked no stake). The chain is kept beside the goals (localStorage, since 10 Nov),
+// and an older per-tab copy (sessionStorage) is carried over once.
 // Usage: node test/ui/drive-demo-chain.mjs <output dir>   (ports: KUZA_UI_PORT, KUZA_UI_CDP; another docs copy: KUZA_UI_ROOT)
 import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -19,7 +21,7 @@ const demoUp = async (t) => {
   return t.eval('!!window.__kuzaDemo');
 };
 const chain = (t) => t.eval(`(() => { const c = window.__kuzaDemo.chain; return { wallet: c.wallet, stake: c.staker ? c.staker.balance : null, txs: c.history.length, inTxs: c.txs.size, height: c.height }; })()`);
-const demoKeys = (t) => t.eval(`Object.keys(localStorage).filter((k) => k.startsWith('kuza.demo.')).length + (sessionStorage.getItem('kuza.demo.chain') ? 100 : 0)`);
+const demoKeys = (t) => t.eval(`Object.keys(localStorage).filter((k) => k.startsWith('kuza.demo.')).length + (localStorage.getItem('kuza.demo.chain') ? 100 : 0)`);
 
 async function main() {
   await rm(OUT, { recursive: true, force: true });
@@ -33,7 +35,7 @@ async function main() {
 
     // Outside the demo nothing is written for the pretend chain.
     await t.go(base);
-    check('no demo: no pretend chain saved', !(await t.eval(`!!sessionStorage.getItem('kuza.demo.chain')`)));
+    check('no demo: no pretend chain saved', !(await t.eval(`!!(localStorage.getItem('kuza.demo.chain') || sessionStorage.getItem('kuza.demo.chain'))`)));
 
     await t.go(`${base}?demo=1&lang=en`);
     await t.eval('localStorage.clear(); sessionStorage.clear()');
@@ -146,7 +148,7 @@ async function main() {
     check('after the payment the goal no longer shows the 70 NIM as set aside', !!left && /Set aside\s*\n?\s*0 NIM/.test(left) && !/Set aside\s*\n?\s*70 NIM/.test(left));
     await t.shot(`${OUT}/after-lightning.png`);
 
-    // A damaged saved chain is ignored as a whole: the demo starts fresh instead of failing.
+    // A damaged saved chain is ignored as a whole: the demo rebuilds it from the goals instead of failing.
     const bad = [
       '{not json',
       JSON.stringify({ v: 1, height: 65800000, wallet: -5, staker: null, history: [] }),
@@ -155,17 +157,35 @@ async function main() {
       JSON.stringify({ v: 1, height: 65800000, wallet: 1e5, staker: null, history: [], pad: 'x'.repeat(300 * 1024) }),
     ];
     // The page saves its chain as it unloads, so the damaged copy is put in place as the next page starts, before the app.
+    // What the goals booked in the stake right now: the rebuilt chain must hold exactly that (none: a fresh chain).
+    const booked = await t.eval(`import('./js/goals.js').then((G) => G.totalPrincipal(JSON.parse(localStorage.getItem('kuza.demo.mainnet')).goals))`);
+    const MIN = (await import('../../docs/js/staking.js')).MIN_STAKE;
+    console.log('booked in the stake before the damaged copies:', booked / NIM);
+    const rebuilt = (c) => (booked >= MIN ? c.stake === booked && c.wallet === 25000 * NIM - booked && c.txs === 1 : c.wallet === 25000 * NIM && c.stake === null && c.txs === 0);
     let fine = 0;
     for (const raw of bad) {
-      const { identifier } = await t.call('Page.addScriptToEvaluateOnNewDocument', { source: `sessionStorage.setItem('kuza.demo.chain', ${JSON.stringify(raw)})` });
+      const { identifier } = await t.call('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('kuza.demo.chain', ${JSON.stringify(raw)}); sessionStorage.removeItem('kuza.demo.chain')` });
       await t.eval('location.reload()');
       await sleep(700);
       await t.call('Page.removeScriptToEvaluateOnNewDocument', { identifier });
       if (!(await demoUp(t))) continue;
       const c = await chain(t);
-      if (c.wallet === 25000 * NIM && c.stake === null && c.txs === 0) fine++;
+      if (rebuilt(c)) fine++;
+      else console.log('damaged copy gave', JSON.stringify(c));
     }
-    check(`damaged saved chain: ignored, fresh demo (${fine}/${bad.length})`, fine === bad.length);
+    check(`damaged saved chain: ignored, rebuilt from the goals (${booked / NIM} NIM booked in the stake) (${fine}/${bad.length})`, fine === bad.length);
+
+    // An older version's per-tab copy (sessionStorage) is carried over once when there is no shared copy yet.
+    const old = JSON.stringify({ v: 1, height: 65900000, wallet: 1234 * NIM, staker: null, history: [] });
+    const { identifier: oldId } = await t.call('Page.addScriptToEvaluateOnNewDocument', { source: `if (!sessionStorage.getItem('test.once')) { sessionStorage.setItem('test.once', '1'); localStorage.removeItem('kuza.demo.chain'); sessionStorage.setItem('kuza.demo.chain', ${JSON.stringify(old)}); }` });
+    await t.eval('sessionStorage.removeItem("test.once")');
+    await t.eval('location.reload()');
+    await sleep(700);
+    await t.call('Page.removeScriptToEvaluateOnNewDocument', { identifier: oldId });
+    await demoUp(t);
+    const carried = await chain(t);
+    check('older per-tab copy: carried over (wallet 1,234 NIM), moved to the shared copy, the tab copy gone', carried.wallet === 1234 * NIM
+      && (await t.eval(`JSON.parse(localStorage.getItem('kuza.demo.chain')).wallet`)) === 1234 * NIM && !(await t.eval(`sessionStorage.getItem('kuza.demo.chain')`)));
   } finally {
     await chrome.stop();
     server.close();

@@ -38,9 +38,9 @@ Everything from a link, the chain, the Worker or the RPC node is treated as data
 
 - All text reaches the page through `textContent`. There is no `innerHTML` or `eval`. The only dynamic import is the
   local `mock.js` for `?demo=1`, which never loads inside the wallet.
-- The demo keeps its pretend chain in `sessionStorage` (`kuza.demo.chain`, this tab only). On load it is size-capped and
-  rebuilt field by field; anything malformed is dropped as a whole and the demo starts fresh. Real-network code never
-  reads it.
+- The demo keeps its pretend chain in `localStorage` (`kuza.demo.chain`, beside the demo goals). Each read is
+  size-capped and rebuilt field by field; anything malformed is dropped as a whole and the chain is rebuilt from the demo
+  goals (or starts fresh). Real-network code never reads it, and the demo only runs outside the wallet.
 - Invite links (`?j=`, and the older `?jar=`) are size-capped. Name, id, target, date, network and owner are each
   validated, addresses must pass the checksum, and contract addresses are refused. The button that opens Nimiq Pay is
   built from those checked values, never from the raw page address.

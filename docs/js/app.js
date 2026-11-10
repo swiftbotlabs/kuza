@@ -18,6 +18,9 @@ import { t, tn, setLang, pickLang, LANGS, lang } from './i18n.js';
 
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo') === '1' && !W.inHost(); // the pretend wallet never runs inside the real one
+// In the demo, an invite link is opened as the pretend friend (mock.js), whose goals are kept apart from the owner's,
+// so the friend's page in the same browser is a friend's page and the owner's goals stay as they were.
+const DEMO_FRIEND = DEMO && /[?&](jar|j)=/.test(location.search);
 const REPO = 'https://github.com/swiftbotlabs/kuza';
 const APP_URL = I.APP_URL;
 const PLATFORM = I.platformOf(navigator.userAgent, navigator.maxTouchPoints || 0);
@@ -35,7 +38,7 @@ const root = () => document.getElementById('app');
 
 /* ---------- storage ---------- */
 
-const storeKey = () => `kuza.${DEMO ? 'demo' : 'v1'}.${R.network}`;
+const storeKey = () => `kuza.${DEMO ? (DEMO_FRIEND ? 'demo.friend' : 'demo') : 'v1'}.${R.network}`;
 
 function loadState(key = storeKey()) {
   try {
@@ -983,7 +986,7 @@ function planCard(goal, prog, now) {
   const rows = [];
   if (next) {
     rows.push(h('div', { class: 'plan-row', 'data-rig': 'plan-next' },
-      h('span', { class: 'plan-k' }, t('plan.next')),
+      h('span', { class: 'plan-k' }, next.done ? t(`plan.thisPeriod.${p}`) : t('plan.next')),
       h('b', {}, next.done ? t(`plan.nextDone.${p}`, { amount: nim(next.amount, 0), date: shortDay(next.from) }) : t('plan.nextDue', { amount: nim(next.amount, 0), date: shortDay(planDay(goal, next.by)) }))));
   }
   if (status) {
@@ -1373,7 +1376,9 @@ function sheetShare(goal) {
       h('div', { class: 'grow' },
         h('div', { class: 'tiny mute' }, t('share.previewKicker')),
         h('b', {}, goal.name),
-        h('div', { class: 'tiny mute' }, t('jar.progress', { amount: fmtNim(prog.gifts || 0, lang(), 0), target: nim(goal.target, 0) })))),
+        h('div', { class: 'tiny mute' }, t('jar.progress', { amount: nim(prog.gifts || 0, 0), target: nim(goal.target, 0) })))),
+    // A friend's browser can read the gifts to this goal on the chain, nothing of the saver's own saving.
+    h('p', { class: 'tiny mute', 'data-rig': 'share-private' }, t('share.previewPrivate')),
     h('p', { class: 'small' }, t('share.body')),
     main,
     h('div', { class: 'actions' },
@@ -1738,7 +1743,7 @@ function sheetSettings() {
     DEMO ? demoReset() : null));
 }
 
-/** Demo only: clears the pretend chain (sessionStorage) and the demo's goals (localStorage), on a second tap. */
+/** Demo only: clears the demo's goals and the pretend chain (both localStorage), on a second tap. */
 function demoReset() {
   let armed = false;
   const btn = h('button', { class: 'btn wide', 'data-rig': 'demo-reset', onclick: () => {
@@ -1748,10 +1753,12 @@ function demoReset() {
       btn.classList.add('danger');
       return;
     }
-    demoChain?.wipe();
+    // The goals go first and the pretend chain last, so another open demo tab sees no goals by the time the chain
+    // goes, and starts its chain over instead of rebuilding a stake for goals that no longer exist.
     try {
-      for (const k of Object.keys(localStorage)) if (k.startsWith('kuza.demo.')) localStorage.removeItem(k);
+      for (const k of Object.keys(localStorage)) if (k.startsWith('kuza.demo.') && k !== demoChain?.CHAIN_KEY) localStorage.removeItem(k);
     } catch { /* storage off: nothing was kept */ }
+    demoChain?.wipe();
     location.replace(location.pathname + location.search);
   } }, t('settings.resetDemo'));
   return btn;
@@ -1772,7 +1779,7 @@ function jarHero(jar, size = 140) {
     hexRing(ratio, size, h('div', {}, h('div', { class: 'gi' }, icon('gift', 26)), h('div', { class: 'pct' }, `${Math.floor(ratio * 100)}%`)), { width: 6 }),
     h('p', { class: 'small mute' }, t('jar.from', { address: shortAddress(jar.owner) })),
     h('h1', {}, jar.name),
-    h('div', { class: 'mute' }, R.gifts === null ? '…' : t('jar.progress', { amount: fmtNim(total, lang(), 0), target: nim(jar.target, 0) })),
+    h('div', { class: 'mute' }, R.gifts === null ? '…' : t('jar.progress', { amount: nim(total, 0), target: nim(jar.target, 0) })),
     R.gifts === null ? null : h('div', { class: 'tiny mute', 'data-rig': 'jar-people' }, people ? tn('jar.people', people) : t('jar.firstOne')),
     jar.date ? h('div', { class: 'tiny mute' }, t('goal.by', { date: dateText(jar.date) })) : null);
 }
@@ -1980,14 +1987,26 @@ function renderJarDone(luna, hash, before = 0) {
       h('div', { class: 'plus', 'data-rig': 'thanks-plus' }, `+${nim(luna)}`),
       h('h1', {}, t('jar.thanks')),
       h('p', { class: 'mute' }, t('jar.thanksBody', { amount: nim(luna), name: jar.name })),
-      h('p', { class: 'small', 'data-rig': 'thanks-total' }, t('jar.progress', { amount: fmtNim(after, lang(), 0), target: nim(jar.target, 0) }), people ? ` · ${tn('jar.people', people)}` : ''),
-      /^[0-9a-fA-F]{64}$/.test(hash || '') ? proof(hash, 'thanks-proof') : null),
+      h('p', { class: 'small', 'data-rig': 'thanks-total' }, t('jar.progress', { amount: nim(after, 0), target: nim(jar.target, 0) })),
+      people ? h('p', { class: 'tiny mute', 'data-rig': 'thanks-people' }, tn('jar.people', people)) : null,
+      /^[0-9a-fA-F]{64}$/.test(hash || '') ? proof(hash, 'thanks-proof') : null,
+      // The demo's pretend chain is per browser: say whether the owner's goal can see this pretend gift.
+      DEMO ? h('p', { class: 'tiny mute', 'data-rig': 'thanks-demo' }, demoGoalHere(jar) ? t('jar.demoHere', { name: jar.name }) : t('jar.demoElsewhere')) : null),
     h('section', { class: 'card own-goal', 'data-rig': 'thanks-own' },
       h('h3', {}, t('thanks.ownTitle')),
       h('p', { class: 'small' }, t('thanks.ownBody')),
       h('div', { class: 'ideas' }, ideas.map((name) => h('a', { class: 'chip-btn', href: `${base}#/new/${encodeURIComponent(name)}` }, name))),
       h('a', { class: 'btn primary wide', href: `${base}#/new/`, 'data-rig': 'j-own' }, t('jar.own'))),
     h('button', { class: 'btn wide', 'data-rig': 'thanks-pass', onclick: async () => { const ok = await copyText(t('share.msgFriend', { name: jar.name, link: jarLink(jar) })); toast(ok ? t('share.copiedMsg') : t('share.select'), ok ? 'good' : 'info'); } }, icon('share', 18), t('thanks.pass')))));
+}
+
+/** Demo only: whether the invite's goal was made in this browser (the pretend owner's goals hold it). */
+function demoGoalHere(jar) {
+  for (const key of [`kuza.demo.${R.network}`, `kuza.demo.${R.network}.${jar.owner.replace(/\s/g, '')}`]) {
+    const s = loadState(key);
+    if (s.address === jar.owner && s.goals.some((g) => g.id === jar.id)) return true;
+  }
+  return false;
 }
 
 async function loadJarGifts() {
@@ -2171,6 +2190,8 @@ async function boot() {
   if (R.landing) return undefined; // the landing page needs no wallet, chain or helper reads
 
   window.addEventListener('hashchange', render);
+  // Demo: another tab of this browser added to the pretend chain (a friend's pretend gift): read the gifts now.
+  if (DEMO) window.addEventListener('kuza-demo-chain', () => { lastGiftCheck = 0; if (!R.jar && !document.hidden) sync(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
 
   loadExtras().catch(() => {});

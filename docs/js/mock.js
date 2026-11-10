@@ -4,21 +4,32 @@
 import { useBackend } from './chain.js';
 import { h } from './ui.js';
 import { MIN_STAKE, BLOCKS_PER_EPOCH, electionBlockAfter, releaseBlock, STAKING_CONTRACT } from './staking.js';
-import { addressHex } from './nim.js';
+import { addressHex, normalizeAddress } from './nim.js';
+import { sanitizeState, totalPrincipal } from './goals.js';
 
 const LUNA = 100000;
 const ME = 'NQ49 DEMA 0000 0000 0000 0000 0000 0000 0001';
 const FRIEND = 'NQ22 DEMA 0000 0000 0000 0000 0000 0000 0002';
+const START_HEIGHT = 65800000;
+const START_WALLET = 25000 * LUNA;
+const POOL = 'NQ08 RS08 LTKL 62QL B954 S9YP 0G3R XVKM RU2Y'; // the first pool of data/validators-main.json
 const chain = {
-  height: 65800000,
-  wallet: 25000 * LUNA,
+  height: START_HEIGHT,
+  wallet: START_WALLET, // the pretend owner's wallet
+  friendWallet: START_WALLET, // the pretend friend's, who opens the owner's invite link
   staker: null,
   txs: new Map(),
   history: [],
+  tickAt: 0,
 };
 
-// The pretend chain lasts for the browser tab (sessionStorage, demo only), so a reload keeps the wallet, the stake,
-// the cooling-off and the history in step with the goals the app keeps in localStorage. Settings > Reset demo clears both.
+/** Opening someone's invite link means being the friend, so the pretend wallet changes hands. */
+const me = () => (/[?&](jar|j)=/.test(location.search) ? FRIEND : ME);
+
+// One pretend chain per browser, kept beside the demo's goals (localStorage, demo only), so every tab, a reload and a
+// new page all read the same wallet, stake, cooling-off and history as the goals that were booked against them.
+// Each tab takes the latest copy before it reads or changes anything (pull), and writes it straight back.
+// Settings > Reset demo clears it with the goals.
 export const CHAIN_KEY = 'kuza.demo.chain';
 const SAVED_MAX = 256 * 1024; // characters; a demo tab never comes close
 const HISTORY_MAX = 300;
@@ -50,11 +61,13 @@ function cleanStaker(s) {
 }
 
 let wiped = false;
+let lastRaw = null; // the saved copy this tab last read or wrote
 
 /** Settings > Reset demo: forget the saved chain, and stop saving it, so the reload that follows starts fresh. */
 export function wipe() {
   wiped = true;
   try {
+    localStorage.removeItem(CHAIN_KEY);
     sessionStorage.removeItem(CHAIN_KEY);
     sessionStorage.removeItem('kuza.demo.seed');
   } catch { /* storage off: nothing was kept */ }
@@ -63,29 +76,94 @@ export function wipe() {
 function saveChain() {
   if (wiped) return;
   try {
-    sessionStorage.setItem(CHAIN_KEY, JSON.stringify({ v: 1, height: chain.height, wallet: chain.wallet, staker: chain.staker, history: chain.history.slice(0, HISTORY_MAX) }));
+    const raw = JSON.stringify({ v: 1, height: chain.height, wallet: chain.wallet, friendWallet: chain.friendWallet, staker: chain.staker, history: chain.history.slice(0, HISTORY_MAX), tickAt: chain.tickAt });
+    localStorage.setItem(CHAIN_KEY, raw);
+    lastRaw = raw;
   } catch { /* storage off or full: the demo still runs, it just starts over on a reload */ }
 }
 
-/** Puts back the chain this tab saved. Anything malformed is ignored as a whole and the demo starts fresh. */
-function restoreChain() {
+function startOver() {
+  chain.height = START_HEIGHT;
+  chain.wallet = START_WALLET;
+  chain.friendWallet = START_WALLET;
+  chain.staker = null;
+  chain.history = [];
+  chain.txs = new Map();
+  chain.tickAt = 0;
+}
+
+/** Puts back a saved chain. Anything malformed is ignored as a whole (false) and nothing changes. */
+function restoreChain(raw) {
   let saved;
   try {
-    const raw = sessionStorage.getItem(CHAIN_KEY);
-    if (!raw || raw.length > SAVED_MAX) return false;
+    if (!raw || typeof raw !== 'string' || raw.length > SAVED_MAX) return false;
     saved = JSON.parse(raw);
   } catch { return false; }
   if (!saved || saved.v !== 1 || !isLuna(saved.height) || !isLuna(saved.wallet) || !Array.isArray(saved.history) || saved.history.length > HISTORY_MAX) return false;
+  if (saved.friendWallet !== undefined && !isLuna(saved.friendWallet)) return false;
+  if (saved.tickAt !== undefined && !isLuna(saved.tickAt)) return false;
   const staker = cleanStaker(saved.staker);
   if (staker === undefined) return false;
   const history = saved.history.map(cleanTx);
   if (history.includes(null)) return false;
   chain.height = saved.height;
   chain.wallet = saved.wallet;
+  chain.friendWallet = saved.friendWallet ?? START_WALLET;
+  chain.tickAt = saved.tickAt ?? 0;
   chain.staker = staker;
   chain.history = history;
   chain.txs = new Map(history.map((tx) => [tx.hash, tx]));
   return true;
+}
+
+/**
+ * Takes the copy another tab of this browser saved, if it changed, before anything is read or changed here. A new
+ * transaction from another tab (a friend's gift sent there) is announced to the app with a 'kuza-demo-chain' event.
+ */
+function pull() {
+  if (wiped) return;
+  let raw;
+  try { raw = localStorage.getItem(CHAIN_KEY); } catch { return; }
+  if (raw === lastRaw) return;
+  const top = chain.history[0]?.hash;
+  if (raw === null) {
+    // Gone: Settings > Reset demo in another tab (the goals go too), or storage cleared. Start as a new page would.
+    startOver();
+    rebuildFromGoals();
+    saveChain();
+  } else if (!restoreChain(raw)) return; // damaged: this tab's copy stands and replaces it on the next save
+  else lastRaw = raw;
+  if (chain.history[0]?.hash !== top) dispatchEvent(new Event('kuza-demo-chain'));
+}
+
+/** The pretend owner's goals as the app keeps them (the friend's tab keeps its own), or null. */
+function ownerGoals() {
+  for (const key of ['kuza.demo.mainnet', `kuza.demo.mainnet.${ME.replace(/\s/g, '')}`]) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw || raw.length > 2 * SAVED_MAX) continue;
+      const s = sanitizeState(JSON.parse(raw));
+      if (s.address === ME) return s;
+    } catch { /* not readable: try the next */ }
+  }
+  return null;
+}
+
+/**
+ * A browser with demo goals but no readable pretend chain (cleared, damaged, or kept per tab by an older version):
+ * the chain is rebuilt from what the goals booked, a stake of that size, made by one deposit, so the stake, the
+ * cooling-off and Earned (0) all agree with the goals instead of reading as "no stake".
+ */
+function rebuildFromGoals() {
+  const s = ownerGoals();
+  if (!s) return;
+  const staked = (Number.isSafeInteger(s.baseline) && s.baseline > 0 ? s.baseline : 0) + totalPrincipal(s.goals);
+  if (!isLuna(staked) || staked < MIN_STAKE || staked > chain.wallet) return;
+  const delegation = normalizeAddress(s.validator || '') || POOL;
+  const cooling = s.unstake && isLuna(s.unstake.amount) ? Math.min(s.unstake.amount, staked) : 0;
+  chain.wallet -= staked;
+  chain.staker = { balance: staked - cooling, inactiveBalance: cooling, retiredBalance: 0, inactiveFrom: cooling ? electionBlockAfter(chain.height) : null, delegation };
+  mine({ to: STAKING_CONTRACT, value: staked, recipientData: `0501${addressHex(delegation) || ''}`, relatedAddresses: [STAKING_CONTRACT, ME, delegation] });
 }
 
 function ask(title, lines) {
@@ -129,13 +207,13 @@ const provider = {
   getBalance: async () => {
     // A test can make the read fail, as a slow or broken wallet would.
     if (chain.balanceFails) throw new Error('Request timed out');
-    return chain.wallet;
+    pull();
+    return me() === FRIEND ? chain.friendWallet : chain.wallet;
   },
   listAccounts: async () => {
-    // Opening someone's invite link means being the friend, so the pretend wallet changes hands.
-    const me = /[?&](jar|j)=/.test(location.search) ? FRIEND : ME;
-    await ask('Connect to Kuza', [`See your address ${me.slice(0, 9)}…`]);
-    return [me];
+    const who = me();
+    await ask('Connect to Kuza', [`See your address ${who.slice(0, 9)}…`]);
+    return [who];
   },
   disconnect() {},
   on(event, fn) {
@@ -144,6 +222,7 @@ const provider = {
   },
   async payLightningInvoice({ invoice }) {
     await ask('Pay with Bitcoin Lightning', [`${String(invoice).slice(0, 26)}…`, 'Pay with: NIM', 'Pretend swap, pretend shop.']);
+    pull();
     chain.pays = (chain.pays || 0) + 1;
     const value = 4200 * LUNA;
     chain.wallet -= value;
@@ -151,6 +230,7 @@ const provider = {
   },
   async sendNewStakerTransaction({ delegation, value }) {
     await ask('Confirm Transaction', ['Create Staker', `${value / LUNA} NIM`]);
+    pull();
     chain.creates = (chain.creates || 0) + 1;
     if (value < MIN_STAKE || chain.staker) throw fail('this would jam a real wallet');
     chain.wallet -= value;
@@ -159,12 +239,14 @@ const provider = {
   },
   async sendStakeTransaction({ value }) {
     await ask('Confirm Transaction', ['Add Stake', `${value / LUNA} NIM`]);
+    pull();
     chain.wallet -= value;
     chain.staker.balance += value;
     return mine({ to: STAKING_CONTRACT, value, recipientData: `06${addressHex(ME)}`, relatedAddresses: [STAKING_CONTRACT, ME] });
   },
   async sendSetActiveStakeTransaction({ newActiveBalance }) {
     await ask('Confirm Transaction', ['Set Active Stake', `${newActiveBalance / LUNA} NIM`]);
+    pull();
     const s = chain.staker;
     const all = s.balance + s.inactiveBalance;
     s.balance = newActiveBalance;
@@ -174,6 +256,7 @@ const provider = {
   },
   async sendRetireStakeTransaction({ retireStake }) {
     await ask('Confirm Transaction', ['Retire Stake', `${retireStake / LUNA} NIM`]);
+    pull();
     const s = chain.staker;
     if (chain.height < releaseBlock(s.inactiveFrom)) throw fail('still cooling off');
     s.inactiveBalance -= retireStake;
@@ -183,6 +266,7 @@ const provider = {
   },
   async sendRemoveStakeTransaction({ value }) {
     await ask('Confirm Transaction', ['Remove Stake', `${value / LUNA} NIM`]);
+    pull();
     const s = chain.staker;
     s.retiredBalance -= value;
     chain.wallet += value;
@@ -191,13 +275,20 @@ const provider = {
   },
   async sendBasicTransactionWithData({ recipient, value, data }) {
     await ask('Confirm Transaction', [`Send ${value / LUNA} NIM`, recipient, `Message: ${data}`]);
-    chain.wallet -= value;
-    return mine({ to: recipient, value, recipientData: [...new TextEncoder().encode(data)].map((b) => b.toString(16).padStart(2, '0')).join('') });
+    pull();
+    // From whoever holds the pretend wallet now (the friend, on an invite link), into the other pretend wallet.
+    const from = me();
+    if (from === FRIEND) chain.friendWallet -= value;
+    else chain.wallet -= value;
+    if (recipient === ME && from !== ME) chain.wallet += value;
+    else if (recipient === FRIEND && from !== FRIEND) chain.friendWallet += value;
+    return mine({ from, to: recipient, value, recipientData: [...new TextEncoder().encode(data)].map((b) => b.toString(16).padStart(2, '0')).join('') });
   },
 };
 
 function backend(method, params) {
   if (chain.offline) throw new Error('offline');
+  pull();
   switch (method) {
     case 'getBlockNumber': return chain.height;
     case 'getStakerByAddress':
@@ -224,7 +315,16 @@ export function install() {
     await new Promise((r) => setTimeout(r, 120));
     return backend(method, params);
   });
-  restoreChain();
+  let raw = null;
+  try { raw = localStorage.getItem(CHAIN_KEY); } catch { /* storage off */ }
+  if (restoreChain(raw)) lastRaw = raw;
+  else {
+    // An older version kept the chain per tab: carry this tab's copy over once, else rebuild from the goals.
+    let old = null;
+    try { old = sessionStorage.getItem(CHAIN_KEY); sessionStorage.removeItem(CHAIN_KEY); } catch { /* storage off */ }
+    if (!restoreChain(old)) rebuildFromGoals();
+    saveChain();
+  }
   // Tests can seed gifts for the next page load (sessionStorage, demo only): [{ luna, memo }]. They go on the chain
   // once and are then kept with it, so the seed is used up.
   try {
@@ -237,20 +337,26 @@ export function install() {
       }
     }
   } catch { /* no seed */ }
+  // One block a second for the whole browser: with several tabs open, whichever ticks first moves the chain.
   setInterval(() => {
+    pull();
+    const gap = Date.now() - chain.tickAt;
+    if (gap >= 0 && gap < 900) return; // another tab just moved it (a clock set back always ticks)
+    chain.tickAt = Date.now();
     chain.height += 1;
     if (chain.staker && chain.staker.balance && !chain.noGrowth) chain.staker.balance += Math.ceil(chain.staker.balance * 2.5e-9);
     saveChain();
   }, 1000);
-  addEventListener('pagehide', saveChain);
+  addEventListener('storage', (e) => { if (e.key === CHAIN_KEY || e.key === null) pull(); });
   window.__kuzaDemo = {
-    skipCooling() { chain.height += 2 * BLOCKS_PER_EPOCH; saveChain(); },
-    reward(luna) { if (chain.staker) chain.staker.balance += luna; saveChain(); },
+    skipCooling() { pull(); chain.height += 2 * BLOCKS_PER_EPOCH; saveChain(); },
+    reward(luna) { pull(); if (chain.staker) chain.staker.balance += luna; saveChain(); },
     emit(event, ...args) { for (const fn of listeners.get(event) || []) fn(...args); },
     chain,
     failNext(type, code, message, data) { chain.failNext = Object.assign(new Error(message), { type, code, data }); },
     gift(luna, memo) {
       const data = [...new TextEncoder().encode(memo)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      pull();
       mine({ from: FRIEND, to: ME, value: luna, recipientData: data });
     },
   };
