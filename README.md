@@ -131,7 +131,7 @@ chain (stake minus deposits plus withdrawals), is 1.00054 NIM, and the live site
 not been photographed on the phone yet. All wallets above are our own test wallets; apart from outside testers, we
 know of no outside user yet.
 
-## Fixed after outside testing (7 and 8 Nov)
+## Fixed after outside testing (7, 8 and 10 Nov)
 
 Outside testers went through the browser demo, the code and the app on a phone, and reported these. Each one was
 reproduced first and now has a test that fails on the old code:
@@ -163,6 +163,18 @@ reproduced first and now has a test that fails on the old code:
   due before the first week ends, and the plan and the suggestion are the same whole number.
 - Getting some NIM back meant deleting or breaking the goal. "Take some out", next to "Add to goal", now takes part of
   it back and keeps the goal: what it holds in the wallet at once, staked NIM through the real cooling-off.
+- In the browser demo, after staking 500 NIM, "Take some out", "Break this goal" and the rewards sheet said there was no
+  stake when the demo was opened in another tab or a fresh page. The pretend chain was kept per tab while the goals
+  were kept per browser. Both are kept per browser now, every tab reads the same pretend stake, and a lost pretend chain
+  is rebuilt from what the goals booked.
+- The invite preview said "0 of 5,000 NIM so far" while the goal showed 500 of 5,000. A friend's browser can only see
+  the gifts sent to the goal, so the preview and the friend's page now say "0 NIM from friends so far · goal 5,000 NIM",
+  and the preview says your own saving isn't shown.
+- A friend's pretend gift in the demo never reached the owner's goal. It does now when both are in the same browser
+  (another tab is fine). In another browser the thank-you page says the owner won't see it, since each browser has its
+  own pretend chain.
+- The plan card said "Next saving: Done this week · 500 NIM from Tue, Nov 17". It now says "This week: Done. Next:
+  500 NIM from Tue, Nov 17", in all four languages.
 
 Still true, and known:
 
@@ -216,7 +228,7 @@ docs/          the site, served as static files on Cloudflare Workers. No build 
   js/staking.js, goals.js, jar.js, nim.js, nudge.js, invite.js, rewards.js, spend.js, qr.js   pure logic, unit tested
   js/chain.js  read-only JSON-RPC
   js/wallet.js the Nimiq Pay provider
-  js/mock.js   pretend wallet and chain for ?demo=1 (kept for the browser tab; Settings > Reset demo starts over)
+  js/mock.js   pretend wallet and chain for ?demo=1 (kept per browser, beside the demo goals; Settings > Reset demo starts over)
   site.css, js/site.js   the landing page in a normal browser (index.html holds its text, so it reads without JavaScript)
   js/vendor/   @nimiq/mini-app-sdk 0.2.4 from npm, unmodified apart from the source map comment
 worker/        optional helper on Cloudflare Workers: wallet count, trimmed pool list, price
@@ -233,6 +245,7 @@ node test/ui/drive-v3.mjs /tmp/kuza-v3  # plans, rewards, sharing, Lightning, th
 node test/ui/drive-demo-chain.mjs /tmp/kuza-demo  # the demo's pretend chain survives a reload; Reset demo
 node test/ui/drive-fixes.mjs /tmp/kuza-fixes      # the fixes after outside testing, walked through in the demo
 node test/ui/drive-plan.mjs /tmp/kuza-plan        # the plan math and "Take some out" (8 Nov), in the demo
+node test/ui/drive-demo-stake.mjs /tmp/kuza-stake # one pretend stake in every tab, friends' view, a gift across tabs (10 Nov)
 node test/qr-decode.mjs /tmp/kuza-qr    # QR codes read back by zbarimg
 ```
 
